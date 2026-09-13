@@ -1,0 +1,37 @@
+:root {
+  --ink: #0f1b23;          /* deep tidal navy — sidebar/panel base */
+  --ink-soft: #1b2e3a;
+  --line: #2c4351;
+  --surface: #f5f2ea;      /* warm sand for map surrounds */
+  --text-hi: #eef3f5;
+  --text-lo: #9fb3bd;
+  --accent: #e08a3c;       /* hazard-amber — used sparingly, for active/warning state */
+  --risk-low: #4f9d78;
+  --risk-mid: #d9a441;
+  --risk-high: #c1502e;
+  --risk-severe: #7a2418;
+  --radius: 3px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+button {
+  font-family: inherit;
+}
+
+.leaflet-container {
+  background: #0a141a;
+}

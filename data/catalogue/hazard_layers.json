@@ -1,0 +1,34 @@
+[
+  {
+    "id": "extreme_heat_lst_baseline",
+    "hazard_theme_id": "extreme_heat",
+    "scenario_id": "baseline",
+    "name": "Land Surface Temperature (Baseline)",
+    "layer_type": "raster",
+    "source": "Landsat Collection 2 Level-2 (via Microsoft Planetary Computer)",
+    "unit": "C",
+    "resolution": "30m",
+    "methodology": "LST derived from Landsat thermal band, atmospherically corrected surface temperature product.",
+    "raster_url": null,
+    "style": { "colormap_name": "inferno", "rescale": "20,45" },
+    "is_public": true
+  },
+  {
+    "id": "coastal_erosion_shoreline_baseline",
+    "hazard_theme_id": "coastal_erosion",
+    "scenario_id": "baseline",
+    "name": "Shoreline Position (Baseline)",
+    "layer_type": "vector",
+    "source": "Sentinel-2 L2A shoreline extraction (via Microsoft Planetary Computer)",
+    "unit": "m/year (erosion rate)",
+    "resolution": "10m",
+    "methodology": "NDWI-based shoreline extraction across multi-year Sentinel-2 composites; rate computed via DSAS-style transects.",
+    "raster_url": null,
+    "style": {
+      "classification": "erosion_rate",
+      "breaks": [-5, -2, -0.5, 0.5, 2],
+      "colors": ["#7f0000", "#d7301f", "#fdae61", "#a6d96a", "#1a9850", "#006837"]
+    },
+    "is_public": true
+  }
+]
