@@ -13,12 +13,19 @@ export function createMap(containerId: string): L.Map {
 
   map.setMaxBounds(LAGOS_BOUNDS.pad(0.3));
 
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: "abcd",
-    maxZoom: 19,
-  }).addTo(map);
+  // CARTO's free raster basemaps (basemaps.cartocdn.com) started requiring
+  // an API key in Aug 2026 and now watermark unauthenticated requests with
+  // "API KEY REQUIRED". Esri's Dark Gray Canvas is a keyless dark basemap
+  // with a similar look, so we use that instead of signing up for a key.
+  L.tileLayer(
+    "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+    {
+      attribution:
+        '&copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, DeLorme, NAVTEQ',
+      maxZoom: 19,
+      maxNativeZoom: 16, // Esri only serves tiles up to z16; Leaflet upscales beyond that
+    }
+  ).addTo(map);
 
   return map;
 }
