@@ -137,19 +137,34 @@ async function main() {
   runAnalysisBtn.addEventListener("click", async () => {
     const layerId = layers.getTopActiveLayerId();
     if (!layerId || !currentAoi) return;
+    const activeDetail = layers.getTopActiveDetail();
+    // Vector layers carry a `risk_class` property per feature, so
+    // "area by class" is meaningful; raster layers (continuous pixel
+    // values like temperature or NDWI) have no such classes, so those
+    // request a plain numeric zonal-stats summary instead.
+    const operation = activeDetail?.layer_type === "vector" ? "area_by_class" : "zonal_stats";
     runAnalysisBtn.disabled = true;
     aoiResultEl.textContent = "Running analysis...";
     try {
       const result = await api.runAnalysis({
         layer_id: layerId,
         geometry: currentAoi.geometry,
-        operation: "area_by_class",
+        operation,
       });
-      const lines = [`${result.feature_count} feature(s) intersect this area`, `Total area: ${result.area_km2} km²`];
+      const lines =
+        operation === "zonal_stats"
+          ? [`${result.feature_count} valid pixel(s) sampled in this area`, `Area: ${result.area_km2} km²`]
+          : [`${result.feature_count} feature(s) intersect this area`, `Total area: ${result.area_km2} km²`];
       if (result.by_class) {
         lines.push("By class:");
         for (const [cls, area] of Object.entries(result.by_class)) {
           lines.push(`  ${cls}: ${area} km²`);
+        }
+      }
+      if (result.values) {
+        lines.push("Pixel value summary:");
+        for (const [stat, val] of Object.entries(result.values)) {
+          lines.push(`  ${stat}: ${val}`);
         }
       }
       aoiResultEl.textContent = lines.join("\n");

@@ -218,6 +218,25 @@ def stac_item_json_url(request_base_url: str, collection: str, item_id: str) -> 
     return f"{request_base_url}api/v1/imagery/item/{collection}/{item_id}.json"
 
 
+def stac_statistics_url(item_json_url: str, assets: list[str], expression: str | None = None) -> tuple[str, list[tuple[str, str]]]:
+    """URL + query params for TiTiler's POST /stac/statistics — same asset
+    URL as stac_tile_url above, but for zonal stats over an AOI instead of a
+    map tile. TiTiler expects the AOI as a GeoJSON Feature/FeatureCollection
+    POST body (see routers/analysis.py), not a query param."""
+    params: list[tuple[str, str]] = [("url", item_json_url)]
+    for asset in assets:
+        params.append(("assets", asset))
+    if expression:
+        params.append(("expression", expression))
+    return f"{settings.titiler_base_url}/stac/statistics", params
+
+
+def cog_statistics_url(raster_url: str) -> tuple[str, list[tuple[str, str]]]:
+    """Same as stac_statistics_url, for a layer with a stored/static COG
+    (layer.raster_url) rather than a live STAC recipe."""
+    return f"{settings.titiler_base_url}/cog/statistics", [("url", raster_url)]
+
+
 def stac_tile_url(
     item_json_url: str,
     assets: list[str],

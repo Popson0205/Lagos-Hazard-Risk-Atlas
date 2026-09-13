@@ -60,4 +60,12 @@ export class LayerManager {
     const ids = [...this.active.keys()];
     return ids.length ? ids[ids.length - 1] : null;
   }
+
+  /** Full metadata (incl. layer_type) for the layer getTopActiveLayerId()
+   * points at — lets callers (e.g. the AOI analysis flow) branch on
+   * raster vs vector without a second network round-trip. */
+  getTopActiveDetail(): LayerDetail | null {
+    const id = this.getTopActiveLayerId();
+    return id ? this.details.get(id) ?? null : null;
+  }
 }
