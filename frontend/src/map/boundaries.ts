@@ -11,9 +11,13 @@ export interface AoiSelection {
 }
 
 const LEVEL_STYLE: Record<BoundaryLevel, L.PathOptions> = {
-  state: { color: "#f97316", weight: 3, fill: false, dashArray: "6 4" },
-  lga: { color: "#eab308", weight: 1.75, fill: false },
-  ward: { color: "#22d3ee", weight: 1, fill: false, opacity: 0.7 },
+  // fillOpacity is near-zero (not 0, and fill isn't `false`) so the whole
+  // polygon area is click-target-able, not just the thin outline stroke —
+  // with fill:false, Leaflet only registers clicks on the stroke itself,
+  // which made picking a single LGA/ward practically impossible.
+  state: { color: "#f97316", weight: 3, fill: true, fillOpacity: 0.02, dashArray: "6 4" },
+  lga: { color: "#eab308", weight: 1.75, fill: true, fillOpacity: 0.02 },
+  ward: { color: "#22d3ee", weight: 1, fill: true, fillOpacity: 0.02, opacity: 0.7 },
 };
 
 const SELECTED_STYLE: L.PathOptions = { color: "#f472b6", weight: 3, fill: true, fillOpacity: 0.08 };
