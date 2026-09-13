@@ -18,7 +18,8 @@ Typical hazard <-> collection mapping (adjust as your methodology firms up):
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
+from urllib.parse import urlencode
 
 import planetary_computer
 from pystac_client import Client
@@ -28,6 +29,9 @@ from app.config import get_settings
 settings = get_settings()
 
 _catalog: Client | None = None
+
+# Lagos State roughly spans 2.7-4.3E, 6.35-6.7N (matches frontend/src/map/mapInit.ts).
+LAGOS_BBOX: list[float] = [2.7, 6.35, 4.3, 6.7]
 
 
 def get_catalog() -> Client:
@@ -91,3 +95,150 @@ def titiler_tile_url(cog_url: str, colormap_name: str | None = None, rescale: st
     if rescale:
         base += f"&rescale={rescale}"
     return base
+
+
+def search_imagery(
+    bbox: list[float] | None,
+    collections: list[str],
+    datetime_range: str | None = None,
+    max_cloud_cover: float | None = 20.0,
+    limit: int = 12,
+) -> list:
+    """Search one or more Planetary Computer collections for the raw imagery
+    browser (GET /api/v1/imagery/search) — distinct from find_best_scene,
+    which picks a single scene for a hazard recipe. This returns everything
+    matching so the caller/frontend can list and choose."""
+    catalog = get_catalog()
+    query = {}
+    if max_cloud_cover is not None and any(
+        c in {"sentinel-2-l2a", "landsat-c2-l2"} for c in collections
+    ):
+        query["eo:cloud_cover"] = {"lt": max_cloud_cover}
+
+    search = catalog.search(
+        collections=collections,
+        bbox=bbox or LAGOS_BBOX,
+        datetime=datetime_range,
+        query=query or None,
+        limit=limit,
+    )
+    return list(search.items())
+
+
+def item_to_dict(item) -> dict:
+    """Flatten a signed pystac.Item down to the fields STACItemOut expects."""
+    return {
+        "id": item.id,
+        "collection": item.collection_id,
+        "datetime": str(item.datetime) if item.datetime else None,
+        "cloud_cover": item.properties.get("eo:cloud_cover"),
+        "assets": {k: a.href for k, a in item.assets.items()},
+    }
+
+
+def get_signed_asset_url(collection: str, item_id: str, asset: str) -> str:
+    """A freshly-signed href for one asset of one item — assets are signed
+    just-in-time here (rather than cached) because Planetary Computer SAS
+    tokens are short-lived."""
+    item = get_item_by_id(collection, item_id)
+    if asset not in item.assets:
+        raise KeyError(
+            f"Asset '{asset}' not found on item '{item_id}' "
+            f"(available: {sorted(item.assets)})"
+        )
+    return item.assets[asset].href
+
+
+class NoScenesFoundError(RuntimeError):
+    """Raised when no STAC item satisfies a hazard recipe's search criteria."""
+
+
+def get_item_by_id(collection: str, item_id: str):
+    """Fetch one STAC item by id, fully signed (the catalog is opened with
+    ``modifier=planetary_computer.sign_inplace``, which pystac-client applies
+    to every response — search results and direct item fetches alike)."""
+    catalog = get_catalog()
+    item = catalog.get_collection(collection).get_item(item_id)
+    if item is None:
+        raise NoScenesFoundError(f"Item '{item_id}' not found in collection '{collection}'")
+    return item
+
+
+def find_best_scene(
+    collection: str,
+    bbox: list[float] | None = None,
+    lookback_days: int = 90,
+    max_cloud_cover: int | None = 20,
+):
+    """Find the least-cloudy recent scene over the AOI — this is what backs
+    each 'live' hazard layer: instead of a pre-baked COG, we pick a fresh
+    Planetary Computer item each time a layer is resolved (see
+    app/services/hazard_recipes.py and routers/layers.py).
+
+    Returns the signed pystac.Item, or raises NoScenesFoundError if nothing
+    in the lookback window meets the cloud-cover threshold (common for
+    Lagos's cloudy season — widen lookback_days or relax max_cloud_cover
+    for those months).
+    """
+    catalog = get_catalog()
+    end = datetime.utcnow().date()
+    start = end - timedelta(days=lookback_days)
+
+    query = {}
+    if max_cloud_cover is not None and collection in {"sentinel-2-l2a", "landsat-c2-l2"}:
+        query["eo:cloud_cover"] = {"lt": max_cloud_cover}
+
+    search = catalog.search(
+        collections=[collection],
+        bbox=bbox or LAGOS_BBOX,
+        datetime=f"{start.isoformat()}/{end.isoformat()}",
+        query=query or None,
+        limit=50,
+    )
+    items = list(search.items())
+    if not items:
+        raise NoScenesFoundError(
+            f"No '{collection}' scenes over Lagos in the last {lookback_days} days "
+            f"under {max_cloud_cover}% cloud cover"
+        )
+
+    def cloud_cover(item):
+        return item.properties.get("eo:cloud_cover", 100)
+
+    items.sort(key=cloud_cover)
+    return items[0]
+
+
+def stac_item_json_url(request_base_url: str, collection: str, item_id: str) -> str:
+    """The URL our own backend serves a signed STAC item at (see
+    routers/imagery.py's /item/{collection}/{item_id}.json) — this is what we
+    hand to TiTiler's /stac endpoint, since TiTiler needs a URL it can fetch
+    itself, not a Python object. request_base_url should already end in '/'
+    (FastAPI's Request.base_url does)."""
+    return f"{request_base_url}api/v1/imagery/item/{collection}/{item_id}.json"
+
+
+def stac_tile_url(
+    item_json_url: str,
+    assets: list[str],
+    expression: str | None = None,
+    rescale: str | None = None,
+    colormap_name: str | None = None,
+) -> str:
+    """Build a TiTiler /stac/tiles URL template that reads one or more
+    assets from a STAC item (via item_json_url) and optionally combines them
+    with a band-math expression — this is how NDWI/NDVI-style two-band
+    hazard layers get computed on the fly, without ever downloading or
+    storing the source imagery ourselves.
+    """
+    params: list[tuple[str, str]] = [("url", item_json_url)]
+    for asset in assets:
+        params.append(("assets", asset))
+    if expression:
+        params.append(("expression", expression))
+    if rescale:
+        params.append(("rescale", rescale))
+    if colormap_name:
+        params.append(("colormap_name", colormap_name))
+    query = urlencode(params, safe="{}/:")
+    return f"{settings.titiler_base_url}/stac/tiles/{{z}}/{{x}}/{{y}}.png?{query}"

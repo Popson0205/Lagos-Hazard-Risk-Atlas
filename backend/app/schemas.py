@@ -50,6 +50,21 @@ class LayerDetailOut(LayerOut):
     """
     tile_url: str | None = None
     features_url: str | None = None
+    # Only set for layers computed live from Planetary Computer STAC imagery
+    # (see hazard_recipes.py) — tells the frontend which actual scene it's
+    # looking at, since "live" means a different date every time it's asked.
+    observed_at: str | None = None
+    cloud_cover: float | None = None
+
+
+class STACItemOut(BaseModel):
+    """One Planetary Computer STAC item, as returned by GET /imagery/search."""
+
+    id: str
+    collection: str
+    datetime: str | None = None
+    cloud_cover: float | None = None
+    assets: dict[str, str]  # asset key -> already-signed href
 
 
 class IdentifyResult(BaseModel):

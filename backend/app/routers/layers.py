@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,6 +6,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import Layer
 from app.schemas import LayerOut, LayerDetailOut
+from app.services import stac_client
 from app.services.stac_client import titiler_tile_url
 
 router = APIRouter(prefix="/layers", tags=["layers"])
@@ -28,7 +29,7 @@ def list_layers(
 
 
 @router.get("/{layer_id}", response_model=LayerDetailOut)
-def get_layer(layer_id: str, db: Session = Depends(get_db)):
+def get_layer(layer_id: str, request: Request, db: Session = Depends(get_db)):
     """Layer metadata + style configuration, plus the resolved URL the
     frontend should actually request data from (raster tile template or
     vector features endpoint) — this is what backs step 3-5 of the System
@@ -40,10 +41,45 @@ def get_layer(layer_id: str, db: Session = Depends(get_db)):
 
     tile_url = None
     features_url = None
-    if layer.layer_type == "raster" and layer.raster_url:
-        colormap = (layer.style or {}).get("colormap_name")
-        rescale = (layer.style or {}).get("rescale")
-        tile_url = titiler_tile_url(layer.raster_url, colormap, rescale)
+    observed_at = None
+    cloud_cover = None
+
+    if layer.layer_type == "raster":
+        stac_recipe = (layer.style or {}).get("stac")
+        if stac_recipe:
+            # Live layer: pick a fresh Planetary Computer scene and compute
+            # the hazard's band-math expression on the fly (no stored COG
+            # for this layer — layer.raster_url stays null).
+            try:
+                item = stac_client.find_best_scene(
+                    collection=stac_recipe["collection"],
+                    bbox=stac_recipe.get("bbox"),
+                    lookback_days=stac_recipe.get("lookback_days", 90),
+                    max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
+                )
+            except stac_client.NoScenesFoundError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except Exception as exc:  # noqa: BLE001 — surface STAC/network errors plainly
+                raise HTTPException(
+                    status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
+                ) from exc
+
+            item_json_url = stac_client.stac_item_json_url(
+                str(request.base_url), stac_recipe["collection"], item.id
+            )
+            tile_url = stac_client.stac_tile_url(
+                item_json_url,
+                assets=stac_recipe["assets"],
+                expression=stac_recipe.get("expression"),
+                rescale=stac_recipe.get("rescale"),
+                colormap_name=stac_recipe.get("colormap_name"),
+            )
+            observed_at = str(item.datetime) if item.datetime else None
+            cloud_cover = item.properties.get("eo:cloud_cover")
+        elif layer.raster_url:
+            colormap = (layer.style or {}).get("colormap_name")
+            rescale = (layer.style or {}).get("rescale")
+            tile_url = titiler_tile_url(layer.raster_url, colormap, rescale)
     elif layer.layer_type == "vector":
         features_url = f"{settings.api_v1_prefix}/layers/{layer.id}/features"
 
@@ -51,4 +87,6 @@ def get_layer(layer_id: str, db: Session = Depends(get_db)):
         **LayerOut.model_validate(layer).model_dump(),
         tile_url=tile_url,
         features_url=features_url,
+        observed_at=observed_at,
+        cloud_cover=cloud_cover,
     )
