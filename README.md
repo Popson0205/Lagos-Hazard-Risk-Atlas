@@ -96,33 +96,37 @@ Deliberately left for you to fill in (data/domain-specific, not architecture):
 - Statistics panel logic (`POST /api/v1/analysis`) — stubbed to return a 501 until you decide which
   zonal-statistics operations you want to expose.
 
-## Deploying on Render
+## Deploying on Render (combined single service)
 
-There's a `render.yaml` Blueprint at the repo root — use **New > Blueprint** in the Render
-dashboard and point it at this repo; Render will pick it up automatically and create the
-backend, frontend, and a managed Postgres database as separate services.
+`Dockerfile` at the repo root builds the frontend and bakes its static output into the
+FastAPI backend image, so **one Web Service serves both** — the API under `/api/v1`, and
+the frontend for everything else (see `app/main.py`'s `StaticFiles` mount, and the
+Dockerfile's comments). This is the setup `render.yaml` targets.
 
-If you instead create services manually (or hit `failed to read dockerfile: open Dockerfile:
-no such file or directory`): that error means Render tried to build from a `Dockerfile` at
-the repo root, which doesn't exist here — this app has two separate Dockerfiles
-(`backend/Dockerfile`, `frontend/Dockerfile`), one per service. In each service's Settings,
-set **Dockerfile Path** to `backend/Dockerfile` or `frontend/Dockerfile` and **Docker Build
-Context Directory** to `backend` or `frontend` to match.
+**Blueprint (recommended):** **New > Blueprint** in the Render dashboard, pointed at this
+repo — it creates the web service and a managed Postgres database from `render.yaml`.
 
-After the first deploy, enable PostGIS on the managed database and load the schema (Render's
-Postgres supports the extension, but it isn't on by default):
+**Manual single Web Service:** if you're getting `failed to read dockerfile: open
+Dockerfile: no such file or directory`, that's Render defaulting to a root Dockerfile
+path that wasn't there before — it exists now, so just make sure the service's Settings >
+Build & Deploy has:
+- **Dockerfile Path**: `Dockerfile`
+- **Docker Build Context Directory**: `.`
+
+After the first deploy, enable PostGIS on the managed database and load the schema
+(Render's Postgres supports the extension, but it isn't on by default):
 ```
 psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
 psql "$DATABASE_URL" -f backend/app/db_init.sql
 ```
-The frontend and backend are separate Render services with separate URLs (no shared nginx
-proxy like `docker-compose.yml` uses locally), so the frontend build needs
-`VITE_API_BASE_URL` set to the backend's public URL — the Blueprint does this for you;
-see the comments in `render.yaml` if setting it up manually.
 
-TiTiler isn't included in the Blueprint — Render doesn't have a one-click public TiTiler
-image — so either point `TITILER_BASE_URL` at an existing TiTiler deployment or add it as
-its own `runtime: image` service using `ghcr.io/developmentseed/titiler:latest`.
+TiTiler isn't included — Render doesn't have a one-click public TiTiler image — so either
+point `TITILER_BASE_URL` at an existing TiTiler deployment or add it as its own
+`runtime: image` service using `ghcr.io/developmentseed/titiler:latest`.
+
+`backend/Dockerfile` and `frontend/Dockerfile` are still there too, used by
+`docker-compose.yml` for local dev (hot reload, separate containers) — they're not part of
+this combined-service path.
 
 ## Imagery source (Planetary Computer)
 
