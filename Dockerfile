@@ -13,6 +13,14 @@ WORKDIR /frontend
 COPY frontend/package.json ./
 RUN npm install
 COPY frontend/ ./
+# Guard against a stray vite.config.js shadowing vite.config.ts: Vite's
+# default config search checks .js BEFORE .ts, so if a leftover
+# vite.config.js ever ends up in the build context (old commit, editor
+# artifact, etc.) it silently wins over this project's real vite.config.ts
+# — which is exactly what was causing the "Cannot find package
+# '@vitejs/plugin-react'" build failures. This repo intentionally has no
+# vite.config.js, so it's always safe to remove one if it appears.
+RUN rm -f vite.config.js && ls -la
 # Same-origin deploy — the API is served from this same container, so the
 # frontend can keep using its default relative "/api/v1" base URL. No
 # VITE_API_BASE_URL needed here (unlike the split two-service setup).
