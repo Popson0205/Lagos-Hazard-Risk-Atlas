@@ -1,0 +1,59 @@
+# Render Blueprint — deploy this whole app with "New > Blueprint" in the
+# Render dashboard, pointed at this repo. Render reads this file from the
+# repo root automatically; that's the fix for the
+# "failed to solve: failed to read dockerfile: open Dockerfile: no such
+# file or directory" error you hit when Render tried to build from a root
+# Dockerfile that doesn't exist — this app has two separate Dockerfiles
+# (backend/Dockerfile, frontend/Dockerfile), one per service.
+#
+# After the blueprint deploys once, go to the Postgres database and enable
+# PostGIS (Render's managed Postgres supports it, but the extension isn't
+# on by default):
+#   psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+# then run the schema + seed:
+#   psql "$DATABASE_URL" -f backend/app/db_init.sql
+#   python -m app.seed   # (from backend/, with DATABASE_URL set)
+#
+# TiTiler (raster tile server) isn't included below — Render doesn't have a
+# one-click public TiTiler image the way docker-compose.yml does, so either
+# point TITILER_BASE_URL at an existing TiTiler deployment, or add a third
+# `runtime: image` service here using `ghcr.io/developmentseed/titiler:latest`.
+
+databases:
+  - name: lagos-risk-atlas-db
+    plan: starter
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: lagos-risk-atlas-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lagos-risk-atlas-db
+          property: connectionString
+      - key: CORS_ORIGINS
+        value: https://lagos-risk-atlas-frontend.onrender.com
+      - key: STAC_API_URL
+        value: https://planetarycomputer.microsoft.com/api/stac/v1
+      - key: TITILER_BASE_URL
+        value: http://localhost:8001 # replace with a real TiTiler URL — see note above
+
+  - type: web
+    name: lagos-risk-atlas-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: starter
+    envVars:
+      # Baked into the static build at Docker build time (Render passes
+      # service env vars into the Docker build as build args) — must be the
+      # backend service's public URL, since these two services don't share
+      # an nginx reverse proxy on Render the way docker-compose.yml does.
+      - key: VITE_API_BASE_URL
+        value: https://lagos-risk-atlas-backend.onrender.com/api/v1
