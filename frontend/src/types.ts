@@ -46,4 +46,49 @@ export interface SearchResult {
   type: "administrative" | "asset" | "location";
   lat: number;
   lon: number;
+  level?: BoundaryLevel | null;
+  code?: string | null;
+  bbox?: [number, number, number, number] | null;
+}
+
+export type BoundaryLevel = "state" | "lga" | "ward";
+
+export interface BoundaryLevelInfo {
+  level: BoundaryLevel;
+  label: string;
+  parent_level: BoundaryLevel | null;
+  feature_count: number;
+}
+
+export interface BoundarySummary {
+  level: BoundaryLevel;
+  code: string;
+  name: string;
+  parent_code: string | null;
+  parent_name: string | null;
+  centroid: [number, number]; // [lon, lat]
+  bbox: [number, number, number, number];
+}
+
+export interface BoundaryFeatureProperties {
+  level: BoundaryLevel;
+  code: string;
+  name: string;
+  parent_code: string | null;
+  parent_name: string | null;
+}
+
+export interface AnalysisRequest {
+  layer_id: string;
+  geometry: GeoJSON.Geometry;
+  operation: "zonal_stats" | "area_by_class";
+}
+
+export interface AnalysisResult {
+  layer_id: string;
+  operation: "zonal_stats" | "area_by_class";
+  feature_count: number;
+  area_km2: number;
+  by_class?: Record<string, number> | null;
+  values?: Record<string, number> | null;
 }

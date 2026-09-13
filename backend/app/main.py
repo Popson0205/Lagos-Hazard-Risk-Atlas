@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import hazards, layers, features, scenarios, search, analysis, health
+from app.routers import hazards, layers, features, scenarios, search, analysis, health, boundaries
 
 settings = get_settings()
 
@@ -28,3 +28,4 @@ app.include_router(layers.router, prefix=settings.api_v1_prefix)
 app.include_router(features.router, prefix=settings.api_v1_prefix)
 app.include_router(search.router, prefix=settings.api_v1_prefix)
 app.include_router(analysis.router, prefix=settings.api_v1_prefix)
+app.include_router(boundaries.router, prefix=settings.api_v1_prefix)

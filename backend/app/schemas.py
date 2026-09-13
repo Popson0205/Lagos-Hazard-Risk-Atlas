@@ -71,3 +71,32 @@ class SearchResult(BaseModel):
     type: Literal["administrative", "asset", "location"]
     lat: float
     lon: float
+    level: Literal["state", "lga", "ward"] | None = None
+    code: str | None = None
+    bbox: tuple[float, float, float, float] | None = None
+
+
+class BoundaryLevelOut(BaseModel):
+    level: Literal["state", "lga", "ward"]
+    label: str
+    parent_level: Literal["state", "lga", "ward"] | None = None
+    feature_count: int
+
+
+class BoundarySummaryOut(BaseModel):
+    level: Literal["state", "lga", "ward"]
+    code: str
+    name: str
+    parent_code: str | None = None
+    parent_name: str | None = None
+    centroid: tuple[float, float]  # (lon, lat)
+    bbox: tuple[float, float, float, float]  # (min_lon, min_lat, max_lon, max_lat)
+
+
+class ZonalStatsResult(BaseModel):
+    layer_id: str
+    operation: Literal["zonal_stats", "area_by_class"]
+    feature_count: int
+    area_km2: float
+    by_class: dict[str, float] | None = None
+    values: dict[str, float] | None = None

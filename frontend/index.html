@@ -36,6 +36,37 @@
           <div id="legend"></div>
         </section>
 
+        <section id="boundaries-section">
+          <h2>Boundaries</h2>
+          <ul id="boundary-list" class="checkbox-list">
+            <li>
+              <label><input type="checkbox" id="boundary-toggle-state" /> State</label>
+            </li>
+            <li>
+              <label><input type="checkbox" id="boundary-toggle-lga" /> LGA</label>
+            </li>
+            <li>
+              <label><input type="checkbox" id="boundary-toggle-ward" /> Ward</label>
+            </li>
+          </ul>
+          <div class="hint">Click a boundary on the map to use it as your area of interest.</div>
+        </section>
+
+        <section id="aoi-section">
+          <h2>Area of Interest</h2>
+          <div id="aoi-summary" class="hint">No area selected. Click a boundary, or draw your own.</div>
+          <div class="button-row">
+            <button id="aoi-draw-btn" type="button">Draw AOI</button>
+            <button id="aoi-finish-btn" type="button" hidden>Finish drawing</button>
+            <button id="aoi-cancel-btn" type="button" hidden>Cancel</button>
+            <button id="aoi-clear-btn" type="button" hidden>Clear</button>
+          </div>
+          <div class="button-row">
+            <button id="aoi-run-analysis-btn" type="button" disabled>Run analysis on active layer</button>
+          </div>
+          <div id="aoi-result"></div>
+        </section>
+
         <section id="identify-section">
           <h2>Identify</h2>
           <div id="identify-result">Click the map to inspect a location.</div>

@@ -1,14 +1,21 @@
 import "./style.css";
+import L from "leaflet";
 import { createMap } from "./map/mapInit";
 import { LayerManager } from "./map/layerControl";
 import { renderLegend } from "./map/legend";
 import { setupIdentify } from "./map/identify";
+import { BoundaryManager, type AoiSelection } from "./map/boundaries";
+import { PolygonDrawTool, type DrawnAoi } from "./map/draw";
 import { api } from "./api/client";
-import type { HazardTheme, Scenario, Layer } from "./types";
+import type { HazardTheme, Scenario, Layer, BoundaryLevel } from "./types";
+
+type Aoi = AoiSelection | DrawnAoi;
 
 async function main() {
   const map = createMap("map");
   const layers = new LayerManager(map);
+  const boundaryManager = new BoundaryManager(map);
+  const drawTool = new PolygonDrawTool(map);
 
   const hazardSelect = document.getElementById("hazard-select") as HTMLSelectElement;
   const scenarioSelect = document.getElementById("scenario-select") as HTMLSelectElement;
@@ -18,8 +25,140 @@ async function main() {
   const searchInput = document.getElementById("search-input") as HTMLInputElement;
   const searchResultsEl = document.getElementById("search-results") as HTMLUListElement;
 
+  const boundaryToggles: Record<BoundaryLevel, HTMLInputElement> = {
+    state: document.getElementById("boundary-toggle-state") as HTMLInputElement,
+    lga: document.getElementById("boundary-toggle-lga") as HTMLInputElement,
+    ward: document.getElementById("boundary-toggle-ward") as HTMLInputElement,
+  };
+  const aoiSummaryEl = document.getElementById("aoi-summary") as HTMLDivElement;
+  const aoiResultEl = document.getElementById("aoi-result") as HTMLDivElement;
+  const drawBtn = document.getElementById("aoi-draw-btn") as HTMLButtonElement;
+  const finishBtn = document.getElementById("aoi-finish-btn") as HTMLButtonElement;
+  const cancelBtn = document.getElementById("aoi-cancel-btn") as HTMLButtonElement;
+  const clearBtn = document.getElementById("aoi-clear-btn") as HTMLButtonElement;
+  const runAnalysisBtn = document.getElementById("aoi-run-analysis-btn") as HTMLButtonElement;
+
   layers.onLegendChange = (detail) => renderLegend(legendEl, detail);
   setupIdentify(map, layers, identifyResultEl);
+
+  // --- Admin boundary overlays (State / LGA / Ward) ---
+  (Object.keys(boundaryToggles) as BoundaryLevel[]).forEach((level) => {
+    boundaryToggles[level].addEventListener("change", async () => {
+      const el = boundaryToggles[level];
+      el.disabled = true;
+      try {
+        await boundaryManager.toggle(level);
+      } catch (err) {
+        el.checked = false;
+        alert(`Could not load ${level} boundaries: ${(err as Error).message}`);
+      } finally {
+        el.disabled = false;
+      }
+    });
+  });
+
+  // --- Area of interest: pick a boundary, or draw a custom polygon ---
+  let currentAoi: Aoi | null = null;
+  let drawnAoiLayer: L.GeoJSON | null = null;
+
+  function clearDrawnAoiLayer(): void {
+    if (drawnAoiLayer) {
+      map.removeLayer(drawnAoiLayer);
+      drawnAoiLayer = null;
+    }
+  }
+
+  function setAoi(aoi: Aoi): void {
+    currentAoi = aoi;
+    boundaryManager.clearSelection();
+    clearDrawnAoiLayer();
+
+    if (aoi.source === "drawn") {
+      drawnAoiLayer = L.geoJSON(aoi.geometry, {
+        style: { color: "#f472b6", weight: 2, fillOpacity: 0.1 },
+      }).addTo(map);
+      aoiSummaryEl.textContent = "Custom drawn area";
+    } else {
+      aoiSummaryEl.textContent = `${aoi.level.toUpperCase()}: ${aoi.name}`;
+    }
+
+    clearBtn.hidden = false;
+    runAnalysisBtn.disabled = !layers.getTopActiveLayerId();
+    aoiResultEl.textContent = "";
+  }
+
+  function clearAoi(): void {
+    currentAoi = null;
+    boundaryManager.clearSelection();
+    clearDrawnAoiLayer();
+    aoiSummaryEl.textContent = "No area selected. Click a boundary, or draw your own.";
+    clearBtn.hidden = true;
+    runAnalysisBtn.disabled = true;
+    aoiResultEl.textContent = "";
+  }
+
+  boundaryManager.onSelect = (aoi) => setAoi(aoi);
+
+  drawBtn.addEventListener("click", () => {
+    drawTool.start();
+    drawBtn.hidden = true;
+    finishBtn.hidden = false;
+    cancelBtn.hidden = false;
+    aoiSummaryEl.textContent = "Click the map to place vertices (need at least 3).";
+  });
+
+  drawTool.onChange = (count) => {
+    aoiSummaryEl.textContent = `Drawing your area — ${count} point${count === 1 ? "" : "s"} placed.`;
+  };
+
+  finishBtn.addEventListener("click", () => {
+    const result = drawTool.finish();
+    drawBtn.hidden = false;
+    finishBtn.hidden = true;
+    cancelBtn.hidden = true;
+    if (!result) {
+      alert("Place at least 3 points before finishing.");
+      if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Click a boundary, or draw your own.";
+      return;
+    }
+    setAoi(result);
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    drawTool.cancel();
+    drawBtn.hidden = false;
+    finishBtn.hidden = true;
+    cancelBtn.hidden = true;
+    if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Click a boundary, or draw your own.";
+  });
+
+  clearBtn.addEventListener("click", clearAoi);
+
+  runAnalysisBtn.addEventListener("click", async () => {
+    const layerId = layers.getTopActiveLayerId();
+    if (!layerId || !currentAoi) return;
+    runAnalysisBtn.disabled = true;
+    aoiResultEl.textContent = "Running analysis...";
+    try {
+      const result = await api.runAnalysis({
+        layer_id: layerId,
+        geometry: currentAoi.geometry,
+        operation: "area_by_class",
+      });
+      const lines = [`${result.feature_count} feature(s) intersect this area`, `Total area: ${result.area_km2} km²`];
+      if (result.by_class) {
+        lines.push("By class:");
+        for (const [cls, area] of Object.entries(result.by_class)) {
+          lines.push(`  ${cls}: ${area} km²`);
+        }
+      }
+      aoiResultEl.textContent = lines.join("\n");
+    } catch (err) {
+      aoiResultEl.textContent = `Analysis unavailable: ${(err as Error).message}`;
+    } finally {
+      runAnalysisBtn.disabled = false;
+    }
+  });
 
   // --- Hazard & scenario selectors ---
   let hazards: HazardTheme[] = [];
@@ -64,6 +203,7 @@ async function main() {
           alert((err as Error).message);
         } finally {
           checkbox.disabled = false;
+          runAnalysisBtn.disabled = !currentAoi || !layers.getTopActiveLayerId();
         }
       });
       const label = document.createElement("span");
@@ -78,7 +218,7 @@ async function main() {
   scenarioSelect.addEventListener("change", refreshLayerList);
   await refreshLayerList();
 
-  // --- Search / zoom-to-administrative-area ---
+  // --- Search / zoom-to-administrative-area (now covers state + all LGAs + wards) ---
   let searchTimeout: number | undefined;
   searchInput.addEventListener("input", () => {
     window.clearTimeout(searchTimeout);
@@ -93,10 +233,21 @@ async function main() {
       for (const r of results) {
         const li = document.createElement("li");
         li.textContent = r.label;
-        li.addEventListener("click", () => {
-          map.setView([r.lat, r.lon], 13);
+        li.addEventListener("click", async () => {
           searchResultsEl.innerHTML = "";
           searchInput.value = r.label;
+          if (r.bbox) {
+            map.fitBounds([
+              [r.bbox[1], r.bbox[0]],
+              [r.bbox[3], r.bbox[2]],
+            ]);
+          } else {
+            map.setView([r.lat, r.lon], 13);
+          }
+          if (r.level && r.code) {
+            const feature = await api.getBoundaryFeature(r.level, r.code);
+            setAoi({ source: "boundary", level: r.level, code: r.code, name: r.label, geometry: feature.geometry! });
+          }
         });
         searchResultsEl.appendChild(li);
       }

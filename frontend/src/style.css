@@ -53,4 +53,28 @@ select, input {
 
 #identify-result { font-size: 13px; color: var(--muted); }
 
+.checkbox-list { list-style: none; padding: 0; margin: 0 0 6px; }
+.checkbox-list li { padding: 3px 0; }
+.checkbox-list label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
+.checkbox-list input { width: auto; }
+
+.hint { font-size: 12px; color: var(--muted); margin-bottom: 8px; line-height: 1.4; }
+
+.button-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.button-row button {
+  flex: 1;
+  padding: 7px 8px;
+  font-size: 12px;
+  background: #1f2937;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.button-row button:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+.button-row button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+#aoi-result { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+#aoi-summary { color: var(--text); }
+
 #map { flex: 1; }
