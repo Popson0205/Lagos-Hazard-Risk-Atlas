@@ -135,9 +135,21 @@ Build & Deploy has:
 Either way, add `DATABASE_URL` in the service's Environment tab with the Supabase
 session-pooler string from step 2/3 above.
 
-TiTiler isn't included — Render doesn't have a one-click public TiTiler image — so either
-point `TITILER_BASE_URL` at an existing TiTiler deployment or add it as its own
-`runtime: image` service using `ghcr.io/developmentseed/titiler:latest`.
+**TiTiler**: raster tiles need a real TiTiler instance — `TITILER_BASE_URL` defaulting
+to `http://localhost:8001` (fine for local docker-compose) will just fail on Render with
+connection-refused / mixed-content errors, since nothing is listening there in
+production. Deploy it as a second Render Web Service:
+
+1. **+ New > Web Service**, choose **Existing Image**, and use
+   `ghcr.io/developmentseed/titiler:latest` (public image, works on the Free plan).
+2. Set env vars: `PORT=10000`, `HOST=0.0.0.0`, `WEB_CONCURRENCY=1`,
+   `GDAL_CACHEMAX=200`, `GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR`.
+3. Once deployed, confirm it's up at `https://<titiler-service>.onrender.com/api.html`.
+4. Set the main backend service's `TITILER_BASE_URL` to that HTTPS URL (no trailing
+   slash) and let it redeploy.
+
+Both being on the Free plan, the TiTiler service spins down after 15 minutes idle —
+the first tile request after a gap will be slow while it wakes back up.
 
 `backend/Dockerfile` and `frontend/Dockerfile` are still there too, used by
 `docker-compose.yml` for local dev (hot reload, separate containers) — they're not part of

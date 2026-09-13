@@ -26,9 +26,14 @@
 #   3. Load the schema once:
 #      psql "$DATABASE_URL" -f backend/app/db_init.sql
 #
-# TiTiler (raster tile server) isn't included below — point TITILER_BASE_URL
-# at an existing TiTiler deployment, or add one as its own
-# `runtime: image` service using `ghcr.io/developmentseed/titiler:latest`.
+# TiTiler (raster tile server): added below as its own free Web Service using
+# the public ghcr.io/developmentseed/titiler:latest image — no separate
+# Dockerfile needed. After first deploy, copy that service's URL (Render
+# dashboard > the titiler service > the URL shown at the top, something like
+# https://lagos-risk-atlas-titiler.onrender.com) into TITILER_BASE_URL below
+# on the main service (no trailing slash). Render's free tier spins services
+# down after 15 min idle — the first tile request after idle will be slow
+# (cold start) while it wakes back up.
 
 services:
   - type: web
@@ -48,4 +53,24 @@ services:
       - key: STAC_API_URL
         value: https://planetarycomputer.microsoft.com/api/stac/v1
       - key: TITILER_BASE_URL
-        value: http://localhost:8001 # replace with a real TiTiler URL — see note above
+        sync: false # set manually once the titiler service below has deployed, e.g.
+        # https://lagos-risk-atlas-titiler.onrender.com  (no trailing slash)
+
+  - type: web
+    name: lagos-risk-atlas-titiler
+    runtime: image
+    image:
+      url: ghcr.io/developmentseed/titiler:latest
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: HOST
+        value: 0.0.0.0
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: GDAL_CACHEMAX
+        value: "200"
+      - key: GDAL_DISABLE_READDIR_ON_OPEN
+        value: EMPTY_DIR
