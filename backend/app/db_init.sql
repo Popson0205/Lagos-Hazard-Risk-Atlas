@@ -1,5 +1,7 @@
 -- Lagos Risk Atlas — catalogue schema
--- Run once against a PostGIS-enabled database (Neon or local).
+-- Run once against a PostGIS-enabled database (Supabase or local).
+-- Supabase ships PostGIS already enabled, so the CREATE EXTENSION below is
+-- a no-op there, but it's kept for local/other-provider Postgres.
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 

@@ -2,7 +2,7 @@
 
 Modular, self-hosted WebGIS for nine climate-risk hazard themes across Lagos State.
 
-Stack: Leaflet + TypeScript (frontend) · FastAPI (backend) · PostgreSQL/PostGIS (Neon or self-hosted)
+Stack: Leaflet + TypeScript (frontend) · FastAPI (backend) · PostgreSQL/PostGIS (Supabase or self-hosted)
 · COG + TiTiler (raster delivery) · Microsoft Planetary Computer STAC (open satellite imagery source)
 · Docker Compose (deployment)
 
@@ -51,7 +51,7 @@ pass over the layer's COG for the AOI, a different code path from the PostGIS on
 
 ## Getting started (local dev)
 
-1. Copy `.env.example` to `.env` and fill in DB credentials (Neon connection string or local PostGIS).
+1. Copy `.env.example` to `.env` and fill in DB credentials (Supabase connection string or local PostGIS).
 2. `docker compose up -d postgis titiler` — bring up the database and raster tile server.
 3. Backend:
    ```
@@ -103,8 +103,27 @@ FastAPI backend image, so **one Web Service serves both** — the API under `/ap
 the frontend for everything else (see `app/main.py`'s `StaticFiles` mount, and the
 Dockerfile's comments). This is the setup `render.yaml` targets.
 
-**Blueprint (recommended):** **New > Blueprint** in the Render dashboard, pointed at this
-repo — it creates the web service and a managed Postgres database from `render.yaml`.
+The database is Supabase Postgres rather than a Render-managed database — `render.yaml`
+no longer provisions one, so create the Supabase project yourself first:
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. **Project Settings > Database > Connect**, copy the **Session pooler** connection
+   string (mode: Session). Use the session pooler, not the direct connection — Supabase's
+   direct connection is IPv6-only unless you've bought the IPv4 add-on, and Render's
+   outbound network is IPv4, so a direct connection string will just fail to resolve. The
+   session pooler is IPv4 and suits a long-lived SQLAlchemy connection pool like this
+   backend's.
+3. Rewrite the connection string's scheme from `postgresql://` to `postgresql+psycopg://`.
+4. Load the schema (PostGIS is already enabled on Supabase, so this just creates the
+   tables and seed rows):
+   ```
+   psql "$DATABASE_URL" -f backend/app/db_init.sql
+   ```
+
+**Blueprint:** **New > Blueprint** in the Render dashboard, pointed at this repo — it
+creates the web service from `render.yaml`. `DATABASE_URL` is left unset in the
+blueprint (`sync: false`); set it manually afterwards in the service's **Environment**
+tab to the Supabase connection string from step 3.
 
 **Manual single Web Service:** if you're getting `failed to read dockerfile: open
 Dockerfile: no such file or directory`, that's Render defaulting to a root Dockerfile
@@ -113,12 +132,8 @@ Build & Deploy has:
 - **Dockerfile Path**: `Dockerfile`
 - **Docker Build Context Directory**: `.`
 
-After the first deploy, enable PostGIS on the managed database and load the schema
-(Render's Postgres supports the extension, but it isn't on by default):
-```
-psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-psql "$DATABASE_URL" -f backend/app/db_init.sql
-```
+Either way, add `DATABASE_URL` in the service's Environment tab with the Supabase
+session-pooler string from step 2/3 above.
 
 TiTiler isn't included — Render doesn't have a one-click public TiTiler image — so either
 point `TITILER_BASE_URL` at an existing TiTiler deployment or add it as its own

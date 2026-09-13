@@ -10,20 +10,25 @@
 # or frontend/Dockerfile, which are for the separate-services / local
 # docker-compose setup instead.)
 #
-# After the first deploy, enable PostGIS on the managed database and load
-# the schema (Render's Postgres supports the extension, but it isn't on by
-# default):
-#   psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-#   psql "$DATABASE_URL" -f backend/app/db_init.sql
+# Database: Supabase Postgres (PostGIS ships enabled — no CREATE EXTENSION
+# needed, but it's harmless to run anyway). Create a project at
+# supabase.com, then:
+#   1. Dashboard > Project Settings > Database > Connect, copy the
+#      "Session pooler" connection string (Transaction Mode: Session).
+#      Use the session pooler, not a direct connection: Supabase's direct
+#      connection is IPv6-only unless you've bought the IPv4 add-on, and
+#      Render's network is IPv4, so a direct connection string will just
+#      hang/fail to resolve. The session pooler is IPv4 and fine for a
+#      long-lived SQLAlchemy connection pool like this backend's.
+#   2. Rewrite the scheme from postgresql:// to postgresql+psycopg:// and
+#      set it as DATABASE_URL below (Render dashboard > Environment, since
+#      it's a secret and not something to commit).
+#   3. Load the schema once:
+#      psql "$DATABASE_URL" -f backend/app/db_init.sql
 #
 # TiTiler (raster tile server) isn't included below — point TITILER_BASE_URL
 # at an existing TiTiler deployment, or add one as its own
 # `runtime: image` service using `ghcr.io/developmentseed/titiler:latest`.
-
-databases:
-  - name: lagos-risk-atlas-db
-    plan: starter
-    postgresMajorVersion: 16
 
 services:
   - type: web
@@ -35,9 +40,9 @@ services:
     healthCheckPath: /api/v1/health
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: lagos-risk-atlas-db
-          property: connectionString
+        sync: false # set manually in the dashboard: your Supabase session-pooler
+        # connection string, e.g.
+        # postgresql+psycopg://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
       - key: CORS_ORIGINS
         value: "*" # same-origin deploy — frontend and API share this service's URL, so CORS mostly doesn't matter here
       - key: STAC_API_URL
