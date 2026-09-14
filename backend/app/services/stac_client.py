@@ -258,17 +258,22 @@ def stac_statistics_url(item_json_url: str, assets: list[str], expression: str |
     """URL + query params for TiTiler's POST /stac/statistics — same asset
     URL as stac_tile_url above, but for zonal stats over an AOI instead of a
     map tile. TiTiler expects the AOI as a GeoJSON Feature/FeatureCollection
-    POST body (see routers/analysis.py), not a query param."""
+    POST body (see routers/analysis.py), not a query param.
+
+    Expressions must use rio-tiler's standard positional b1/b2/... band
+    convention (matching the order `assets` are given in), not the literal
+    asset name — rio-tiler's core expression parser treats any token
+    matching b<digits> (case-insensitively) as a band index, which
+    Sentinel-2's real asset names ("B03", "B08", ...) collide with: passing
+    literal "B03" gets read as band index 3, not "the asset named B03",
+    throwing "Invalid band/asset name 'b03'". b1/b2/... side-steps this
+    entirely since it's the convention rio-tiler expects in the first place.
+    """
     params: list[tuple[str, str]] = [("url", item_json_url)]
     for asset in assets:
         params.append(("assets", asset))
     if expression:
         params.append(("expression", expression))
-        # Without this, rio-tiler names each asset's expression variable
-        # "{asset}_b1" (assuming a multi-band file), not the bare asset name
-        # our recipes' expressions use (e.g. "lwir11*0.00341..."). That
-        # mismatch is exactly what threw "Invalid band/asset name 'lwir11'".
-        params.append(("asset_as_band", "true"))
     return f"{settings.titiler_base_url}/stac/statistics", params
 
 
@@ -290,18 +295,15 @@ def stac_tile_url(
     with a band-math expression — this is how NDWI/NDVI-style two-band
     hazard layers get computed on the fly, without ever downloading or
     storing the source imagery ourselves.
+
+    See stac_statistics_url's docstring on why expressions must use
+    positional b1/b2/... band references rather than literal asset names.
     """
     params: list[tuple[str, str]] = [("url", item_json_url)]
     for asset in assets:
         params.append(("assets", asset))
     if expression:
         params.append(("expression", expression))
-        # Same asset_as_band fix as stac_statistics_url above — tiles didn't
-        # error without it, but that means rio-tiler silently fell back to
-        # some other band interpretation rather than raising, so the
-        # temperature/NDWI/NDVI values actually rendered were very likely
-        # wrong even though a colored image came back with no error.
-        params.append(("asset_as_band", "true"))
     if rescale:
         params.append(("rescale", rescale))
     if colormap_name:

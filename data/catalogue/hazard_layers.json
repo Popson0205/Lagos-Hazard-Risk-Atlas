@@ -16,7 +16,7 @@
       "stac": {
         "collection": "landsat-c2-l2",
         "assets": ["lwir11"],
-        "expression": "lwir11*0.00341802+149.0-273.15",
+        "expression": "b1*0.00341802+149.0-273.15",
         "rescale": "20,45",
         "colormap_name": "inferno",
         "max_cloud_cover": 20,
@@ -42,7 +42,7 @@
       "stac": {
         "collection": "sentinel-2-l2a",
         "assets": ["B03", "B08"],
-        "expression": "(B03-B08)/(B03+B08)",
+        "expression": "(b1-b2)/(b1+b2)",
         "rescale": "-1,1",
         "colormap_name": "rdbu",
         "max_cloud_cover": 20,
@@ -68,7 +68,7 @@
       "stac": {
         "collection": "sentinel-2-l2a",
         "assets": ["B08", "B04"],
-        "expression": "(B08-B04)/(B08+B04)",
+        "expression": "(b1-b2)/(b1+b2)",
         "rescale": "-1,1",
         "colormap_name": "rdylgn",
         "max_cloud_cover": 20,
