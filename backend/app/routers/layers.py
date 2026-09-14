@@ -72,6 +72,7 @@ def get_layer(
     features_url = None
     observed_at = None
     cloud_cover = None
+    relaxed_search = False
 
     if layer.layer_type == "raster":
         style = layer.style or {}
@@ -90,7 +91,7 @@ def get_layer(
             # the hazard's band-math expression on the fly (no stored COG
             # for this layer — layer.raster_url stays null).
             try:
-                item = stac_client.find_best_scene(
+                item, relaxed_search = stac_client.find_best_scene_with_fallback(
                     collection=stac_recipe["collection"],
                     bbox=stac_recipe.get("bbox"),
                     lookback_days=stac_recipe.get("lookback_days", 90),
@@ -129,4 +130,5 @@ def get_layer(
         features_url=features_url,
         observed_at=observed_at,
         cloud_cover=cloud_cover,
+        relaxed_search=relaxed_search,
     )

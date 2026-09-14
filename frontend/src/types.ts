@@ -48,6 +48,7 @@ export interface LayerDetail extends Layer {
    * item in the window, not necessarily that exact day. */
   observed_at?: string | null;
   cloud_cover?: number | null;
+  relaxed_search?: boolean;
 }
 
 export interface SearchResult {
@@ -103,4 +104,5 @@ export interface AnalysisResult {
   by_class?: Record<string, number> | null;
   values?: Record<string, number> | null;
   observed_at?: string | null;
+  relaxed_search?: boolean;
 }

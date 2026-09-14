@@ -55,6 +55,12 @@ class LayerDetailOut(LayerOut):
     # looking at, since "live" means a different date every time it's asked.
     observed_at: str | None = None
     cloud_cover: float | None = None
+    # True if the strict lookback/cloud-cover window from the recipe found
+    # nothing and a much wider, unfiltered fallback search is what actually
+    # produced this scene — Lagos's monsoon season makes that fairly common,
+    # so the frontend surfaces this rather than silently showing a cloudier
+    # scene as if it were a normal clean one.
+    relaxed_search: bool = False
 
 
 class STACItemOut(BaseModel):
@@ -125,3 +131,4 @@ class ZonalStatsResult(BaseModel):
     # search picks the least-cloudy item in the window, not necessarily
     # exactly the requested day).
     observed_at: str | None = None
+    relaxed_search: bool = False

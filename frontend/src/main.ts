@@ -180,6 +180,9 @@ async function main() {
       if (result.observed_at) {
         lines.push(`Imagery date: ${result.observed_at.slice(0, 10)}`);
       }
+      if (result.relaxed_search) {
+        lines.push("(No cloud-free scene near the requested date — widened the search window.)");
+      }
       if (result.by_class) {
         lines.push("By class:");
         for (const [cls, area] of Object.entries(result.by_class)) {

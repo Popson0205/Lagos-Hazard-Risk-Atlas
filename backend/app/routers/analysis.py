@@ -116,7 +116,7 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
                 raise HTTPException(status_code=400, detail="date cannot be in the future")
 
         try:
-            item = stac_client.find_best_scene(
+            item, relaxed_search = stac_client.find_best_scene_with_fallback(
                 collection=stac_recipe["collection"],
                 bbox=stac_recipe.get("bbox"),
                 lookback_days=stac_recipe.get("lookback_days", 90),
@@ -140,6 +140,7 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
     elif layer.raster_url:
         url, params = stac_client.cog_statistics_url(layer.raster_url)
         observed_at = None
+        relaxed_search = False
     else:
         raise HTTPException(
             status_code=501,
@@ -179,6 +180,7 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
         area_km2=round(_aoi_area_km2(body.geometry), 3),
         values=values,
         observed_at=observed_at,
+        relaxed_search=relaxed_search,
     )
 
 

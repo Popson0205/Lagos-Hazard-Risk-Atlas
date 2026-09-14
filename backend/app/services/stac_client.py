@@ -164,6 +164,34 @@ def get_item_by_id(collection: str, item_id: str):
     return item
 
 
+def find_best_scene_with_fallback(
+    collection: str,
+    bbox: list[float] | None = None,
+    lookback_days: int = 90,
+    max_cloud_cover: int | None = 20,
+    anchor_date: date | None = None,
+) -> tuple["object", bool]:
+    """find_best_scene, but if the configured window/cloud-cover threshold
+    turns up nothing, automatically retries with a much wider window and no
+    cloud filter before giving up. This matters specifically for Lagos:
+    it's coastal and monsoon-influenced, so a strict 60-90 day / 20%
+    cloud-cover search genuinely has no hits a lot of the time — that's not
+    a rare unlucky window, it's the normal state for parts of the year, so
+    failing hard there isn't useful.
+
+    Returns (item, relaxed) — relaxed is True if the fallback search is what
+    actually found something, so callers can tell the user the result isn't
+    from as clean a scene as usual.
+    """
+    try:
+        return find_best_scene(collection, bbox, lookback_days, max_cloud_cover, anchor_date), False
+    except NoScenesFoundError:
+        pass
+    # Retry: 4x the window, no cloud-cover filter at all — take whatever's
+    # least cloudy in that wider range rather than nothing.
+    return find_best_scene(collection, bbox, lookback_days * 4, None, anchor_date), True
+
+
 def find_best_scene(
     collection: str,
     bbox: list[float] | None = None,

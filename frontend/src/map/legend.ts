@@ -103,6 +103,16 @@ export function renderLegend(container: HTMLElement, detail: LayerDetail | null)
         : "";
     observed.textContent = `Imagery date: ${dateStr}${cloudStr}`;
     container.appendChild(observed);
+
+    if (detail.relaxed_search) {
+      const note = document.createElement("div");
+      note.style.marginTop = "4px";
+      note.style.fontSize = "0.85em";
+      note.style.color = "#f59e0b";
+      note.textContent =
+        "No cloud-free scene near the requested date — showing the best available from a wider search window.";
+      container.appendChild(note);
+    }
   }
 
   if (detail.methodology) {
