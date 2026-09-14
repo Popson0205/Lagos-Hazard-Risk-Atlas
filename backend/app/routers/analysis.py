@@ -150,12 +150,22 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
 
     feature = {"type": "Feature", "geometry": body.geometry, "properties": {}}
     try:
-        resp = httpx.post(url, params=params, json=feature, timeout=30)
+        # 75s, not 30 — TiTiler's free-tier Render service spins down after
+        # 15 min idle, and a cold start plus the actual stats computation
+        # can genuinely take 40-60s the first time. A short timeout here
+        # just turns "slow" into a confusing hard failure.
+        resp = httpx.post(url, params=params, json=feature, timeout=75)
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=502,
             detail=f"TiTiler statistics request failed ({exc.response.status_code}): {exc.response.text[:300]}",
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="TiTiler took too long to respond — if it's been idle a while (free tier "
+            "spins down after 15 minutes), it may just be waking up. Please try again.",
         ) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Could not reach TiTiler: {exc}") from exc
