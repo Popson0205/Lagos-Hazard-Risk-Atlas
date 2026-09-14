@@ -1,4 +1,5 @@
 import json
+from datetime import date as date_type
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -103,12 +104,24 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
         )
 
     if stac_recipe:
+        anchor_date = None
+        if body.date:
+            try:
+                anchor_date = date_type.fromisoformat(body.date)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid date '{body.date}' — expected YYYY-MM-DD"
+                ) from exc
+            if anchor_date > date_type.today():
+                raise HTTPException(status_code=400, detail="date cannot be in the future")
+
         try:
             item = stac_client.find_best_scene(
                 collection=stac_recipe["collection"],
                 bbox=stac_recipe.get("bbox"),
                 lookback_days=stac_recipe.get("lookback_days", 90),
                 max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
+                anchor_date=anchor_date,
             )
         except stac_client.NoScenesFoundError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -123,8 +136,10 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
         url, params = stac_client.stac_statistics_url(
             item_json_url, assets=stac_recipe["assets"], expression=stac_recipe.get("expression")
         )
+        observed_at = str(item.datetime) if item.datetime else None
     elif layer.raster_url:
         url, params = stac_client.cog_statistics_url(layer.raster_url)
+        observed_at = None
     else:
         raise HTTPException(
             status_code=501,
@@ -163,6 +178,7 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
         feature_count=pixel_count,
         area_km2=round(_aoi_area_km2(body.geometry), 3),
         values=values,
+        observed_at=observed_at,
     )
 
 

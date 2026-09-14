@@ -43,6 +43,11 @@ export interface Layer {
 export interface LayerDetail extends Layer {
   tile_url?: string | null;
   features_url?: string | null;
+  /** Which actual scene this is, for live STAC layers — the requested date
+   * and the scene found can differ, since search picks the least-cloudy
+   * item in the window, not necessarily that exact day. */
+  observed_at?: string | null;
+  cloud_cover?: number | null;
 }
 
 export interface SearchResult {
@@ -86,6 +91,8 @@ export interface AnalysisRequest {
   layer_id: string;
   geometry: GeoJSON.Geometry;
   operation: "zonal_stats" | "area_by_class";
+  /** Same historical-date anchor as api.getLayer's date param. */
+  date?: string;
 }
 
 export interface AnalysisResult {
@@ -95,4 +102,5 @@ export interface AnalysisResult {
   area_km2: number;
   by_class?: Record<string, number> | null;
   values?: Record<string, number> | null;
+  observed_at?: string | null;
 }

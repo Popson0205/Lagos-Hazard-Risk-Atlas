@@ -47,7 +47,10 @@ export const api = {
     return getJSON<Layer[]>(`${BASE}/layers${suffix}`);
   },
 
-  getLayer: (layerId: string) => getJSON<LayerDetail>(`${BASE}/layers/${layerId}`),
+  getLayer: (layerId: string, date?: string | null) => {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+    return getJSON<LayerDetail>(`${BASE}/layers/${layerId}${qs}`);
+  },
 
   getFeatures: (layerId: string, bbox?: [number, number, number, number]) => {
     const qs = bbox ? `?bbox=${bbox.join(",")}` : "";

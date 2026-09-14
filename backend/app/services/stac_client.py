@@ -169,19 +169,26 @@ def find_best_scene(
     bbox: list[float] | None = None,
     lookback_days: int = 90,
     max_cloud_cover: int | None = 20,
+    anchor_date: date | None = None,
 ):
-    """Find the least-cloudy recent scene over the AOI — this is what backs
-    each 'live' hazard layer: instead of a pre-baked COG, we pick a fresh
-    Planetary Computer item each time a layer is resolved (see
+    """Find the least-cloudy scene over the AOI in the lookback_days window
+    ending at anchor_date (defaults to today) — this is what backs each
+    'live' hazard layer: instead of a pre-baked COG, we pick a Planetary
+    Computer item each time a layer is resolved (see
     app/services/hazard_recipes.py and routers/layers.py).
+
+    Passing anchor_date lets the caller ask "what did this look like around
+    <some past date>" instead of always "what does this look like right
+    now" — the historical-date picker in the frontend uses this to search
+    any past window rather than only ever the most recent one.
 
     Returns the signed pystac.Item, or raises NoScenesFoundError if nothing
     in the lookback window meets the cloud-cover threshold (common for
-    Lagos's cloudy season — widen lookback_days or relax max_cloud_cover
-    for those months).
+    Lagos's cloudy season, or for a window before satellite coverage began —
+    widen lookback_days or relax max_cloud_cover for those months).
     """
     catalog = get_catalog()
-    end = datetime.utcnow().date()
+    end = anchor_date or datetime.utcnow().date()
     start = end - timedelta(days=lookback_days)
 
     query = {}
@@ -197,8 +204,9 @@ def find_best_scene(
     )
     items = list(search.items())
     if not items:
+        window_desc = f"{start.isoformat()} to {end.isoformat()}"
         raise NoScenesFoundError(
-            f"No '{collection}' scenes over Lagos in the last {lookback_days} days "
+            f"No '{collection}' scenes over Lagos between {window_desc} "
             f"under {max_cloud_cover}% cloud cover"
         )
 

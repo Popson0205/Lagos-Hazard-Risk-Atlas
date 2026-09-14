@@ -19,6 +19,7 @@ async function main() {
 
   const hazardSelect = document.getElementById("hazard-select") as HTMLSelectElement;
   const scenarioSelect = document.getElementById("scenario-select") as HTMLSelectElement;
+  const imageryDateInput = document.getElementById("imagery-date-input") as HTMLInputElement;
   const layerListEl = document.getElementById("layer-list") as HTMLUListElement;
   const legendEl = document.getElementById("legend") as HTMLDivElement;
   const identifyResultEl = document.getElementById("identify-result") as HTMLDivElement;
@@ -134,6 +135,26 @@ async function main() {
 
   clearBtn.addEventListener("click", clearAoi);
 
+  // --- Historical imagery date (live STAC raster layers only) ---
+  imageryDateInput.max = new Date().toISOString().slice(0, 10);
+  imageryDateInput.addEventListener("change", async () => {
+    imageryDateInput.disabled = true;
+    try {
+      layers.setDate(imageryDateInput.value || null);
+      await layers.refreshActiveRasterLayers();
+      // A previously-run analysis result is now stale (it reflected the old
+      // date's scene), and re-running needs a fresh click anyway since the
+      // pixel values have changed under it.
+      if (aoiResultEl.textContent) {
+        aoiResultEl.textContent = "Imagery date changed — click \u201cRun analysis\u201d again to refresh this result.";
+      }
+    } catch (err) {
+      alert(`Could not load imagery for ${imageryDateInput.value}: ${(err as Error).message}`);
+    } finally {
+      imageryDateInput.disabled = false;
+    }
+  });
+
   runAnalysisBtn.addEventListener("click", async () => {
     const layerId = layers.getTopActiveLayerId();
     if (!layerId || !currentAoi) return;
@@ -150,11 +171,15 @@ async function main() {
         layer_id: layerId,
         geometry: currentAoi.geometry,
         operation,
+        date: imageryDateInput.value || undefined,
       });
       const lines =
         operation === "zonal_stats"
           ? [`${result.feature_count} valid pixel(s) sampled in this area`, `Area: ${result.area_km2} km²`]
           : [`${result.feature_count} feature(s) intersect this area`, `Total area: ${result.area_km2} km²`];
+      if (result.observed_at) {
+        lines.push(`Imagery date: ${result.observed_at.slice(0, 10)}`);
+      }
       if (result.by_class) {
         lines.push("By class:");
         for (const [cls, area] of Object.entries(result.by_class)) {

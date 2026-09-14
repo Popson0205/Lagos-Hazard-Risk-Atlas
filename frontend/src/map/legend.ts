@@ -91,6 +91,20 @@ export function renderLegend(container: HTMLElement, detail: LayerDetail | null)
     }
   }
 
+  if (detail.observed_at) {
+    const observed = document.createElement("div");
+    observed.style.marginTop = "6px";
+    observed.style.fontSize = "0.85em";
+    observed.style.color = "#a3e635";
+    const dateStr = detail.observed_at.slice(0, 10);
+    const cloudStr =
+      detail.cloud_cover !== undefined && detail.cloud_cover !== null
+        ? ` · ${detail.cloud_cover.toFixed(0)}% cloud cover`
+        : "";
+    observed.textContent = `Imagery date: ${dateStr}${cloudStr}`;
+    container.appendChild(observed);
+  }
+
   if (detail.methodology) {
     const meth = document.createElement("div");
     meth.style.marginTop = "8px";

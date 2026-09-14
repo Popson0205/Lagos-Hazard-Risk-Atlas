@@ -79,6 +79,11 @@ class AnalysisRequest(BaseModel):
     layer_id: str
     geometry: dict[str, Any]  # GeoJSON geometry for the area of interest
     operation: Literal["zonal_stats", "area_by_class"] = "zonal_stats"
+    # Same historical-date anchor as GET /layers/{id}?date=... — lets zonal
+    # stats be computed against the same past scene the map is showing,
+    # instead of always defaulting to "most recent". No effect on vector
+    # layers or xyz-tile layers (see routers/analysis.py).
+    date: str | None = None
 
 
 class SearchResult(BaseModel):
@@ -115,3 +120,8 @@ class ZonalStatsResult(BaseModel):
     area_km2: float
     by_class: dict[str, float] | None = None
     values: dict[str, float] | None = None
+    # Which actual scene's date this result reflects, for live STAC layers
+    # (the requested date and the scene actually found can differ — the
+    # search picks the least-cloudy item in the window, not necessarily
+    # exactly the requested day).
+    observed_at: str | None = None
