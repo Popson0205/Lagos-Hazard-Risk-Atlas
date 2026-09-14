@@ -7,7 +7,7 @@ import { setupIdentify } from "./map/identify";
 import { BoundaryManager, type AoiSelection } from "./map/boundaries";
 import { PolygonDrawTool, type DrawnAoi } from "./map/draw";
 import { api } from "./api/client";
-import type { HazardTheme, Scenario, Layer, BoundaryLevel } from "./types";
+import type { HazardTheme, Scenario, Layer } from "./types";
 
 type Aoi = AoiSelection | DrawnAoi;
 
@@ -26,11 +26,8 @@ async function main() {
   const searchInput = document.getElementById("search-input") as HTMLInputElement;
   const searchResultsEl = document.getElementById("search-results") as HTMLUListElement;
 
-  const boundaryToggles: Record<BoundaryLevel, HTMLInputElement> = {
-    state: document.getElementById("boundary-toggle-state") as HTMLInputElement,
-    lga: document.getElementById("boundary-toggle-lga") as HTMLInputElement,
-    ward: document.getElementById("boundary-toggle-ward") as HTMLInputElement,
-  };
+  const lgaSelect = document.getElementById("boundary-lga-select") as HTMLSelectElement;
+  const wardSelect = document.getElementById("boundary-ward-select") as HTMLSelectElement;
   const aoiSummaryEl = document.getElementById("aoi-summary") as HTMLDivElement;
   const aoiResultEl = document.getElementById("aoi-result") as HTMLDivElement;
   const drawBtn = document.getElementById("aoi-draw-btn") as HTMLButtonElement;
@@ -41,22 +38,6 @@ async function main() {
 
   layers.onLegendChange = (detail) => renderLegend(legendEl, detail);
   setupIdentify(map, layers, identifyResultEl);
-
-  // --- Admin boundary overlays (State / LGA / Ward) ---
-  (Object.keys(boundaryToggles) as BoundaryLevel[]).forEach((level) => {
-    boundaryToggles[level].addEventListener("change", async () => {
-      const el = boundaryToggles[level];
-      el.disabled = true;
-      try {
-        await boundaryManager.toggle(level);
-      } catch (err) {
-        el.checked = false;
-        alert(`Could not load ${level} boundaries: ${(err as Error).message}`);
-      } finally {
-        el.disabled = false;
-      }
-    });
-  });
 
   // --- Area of interest: pick a boundary, or draw a custom polygon ---
   let currentAoi: Aoi | null = null;
@@ -71,10 +52,15 @@ async function main() {
 
   function setAoi(aoi: Aoi): void {
     currentAoi = aoi;
-    boundaryManager.clearSelection();
     clearDrawnAoiLayer();
 
     if (aoi.source === "drawn") {
+      // A custom polygon replaces any ward highlight — but selectWard()
+      // already owns its own layer swap, so only clear here for the
+      // "drawn" branch; clearing unconditionally would wipe out a ward
+      // highlight the instant selectWard() just added it.
+      boundaryManager.clearSelection();
+      wardSelect.value = "";
       drawnAoiLayer = L.geoJSON(aoi.geometry, {
         style: { color: "#f472b6", weight: 2, fillOpacity: 0.1 },
       }).addTo(map);
@@ -92,7 +78,7 @@ async function main() {
     currentAoi = null;
     boundaryManager.clearSelection();
     clearDrawnAoiLayer();
-    aoiSummaryEl.textContent = "No area selected. Click a boundary, or draw your own.";
+    aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
     clearBtn.hidden = true;
     runAnalysisBtn.disabled = true;
     aoiResultEl.textContent = "";
@@ -119,7 +105,7 @@ async function main() {
     cancelBtn.hidden = true;
     if (!result) {
       alert("Place at least 3 points before finishing.");
-      if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Click a boundary, or draw your own.";
+      if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
       return;
     }
     setAoi(result);
@@ -130,10 +116,79 @@ async function main() {
     drawBtn.hidden = false;
     finishBtn.hidden = true;
     cancelBtn.hidden = true;
-    if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Click a boundary, or draw your own.";
+    if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
   });
 
-  clearBtn.addEventListener("click", clearAoi);
+  clearBtn.addEventListener("click", () => {
+    wardSelect.value = "";
+    clearAoi();
+  });
+
+  // --- Admin boundary cascade: State (Lagos, fixed) -> LGA -> Ward ---
+  boundaryManager.loadStateContext().catch((err) => {
+    console.error("Could not load the Lagos state outline:", err);
+  });
+
+  function resetWardOptions(placeholder: string, disabled: boolean): void {
+    wardSelect.innerHTML = `<option value="">${placeholder}</option>`;
+    wardSelect.disabled = disabled;
+  }
+
+  try {
+    const lgas = await boundaryManager.listLgas();
+    lgaSelect.innerHTML =
+      `<option value="">Select LGA…</option>` +
+      lgas.map((l) => `<option value="${l.code}">${l.name}</option>`).join("");
+  } catch (err) {
+    lgaSelect.innerHTML = `<option value="">Could not load LGAs</option>`;
+  }
+
+  lgaSelect.addEventListener("change", async () => {
+    const lgaCode = lgaSelect.value;
+    wardSelect.value = "";
+    clearAoi();
+
+    if (!lgaCode) {
+      await boundaryManager.showLgaContext(null);
+      resetWardOptions("Select an LGA first…", true);
+      return;
+    }
+
+    lgaSelect.disabled = true;
+    resetWardOptions("Loading wards…", true);
+    try {
+      const [wards] = await Promise.all([
+        boundaryManager.listWards(lgaCode),
+        boundaryManager.showLgaContext(lgaCode),
+      ]);
+      wardSelect.innerHTML =
+        `<option value="">Select ward…</option>` +
+        wards.map((w) => `<option value="${w.code}">${w.name}</option>`).join("");
+      wardSelect.disabled = false;
+    } catch (err) {
+      resetWardOptions("Could not load wards", true);
+      alert(`Could not load wards for this LGA: ${(err as Error).message}`);
+    } finally {
+      lgaSelect.disabled = false;
+    }
+  });
+
+  wardSelect.addEventListener("change", async () => {
+    const wardCode = wardSelect.value;
+    if (!wardCode) {
+      clearAoi();
+      return;
+    }
+    wardSelect.disabled = true;
+    try {
+      await boundaryManager.selectWard(wardCode);
+    } catch (err) {
+      wardSelect.value = "";
+      alert(`Could not load this ward's boundary: ${(err as Error).message}`);
+    } finally {
+      wardSelect.disabled = false;
+    }
+  });
 
   // --- Historical imagery date (live STAC raster layers only) ---
   imageryDateInput.max = new Date().toISOString().slice(0, 10);

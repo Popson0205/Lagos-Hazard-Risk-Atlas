@@ -48,18 +48,22 @@
 
         <section id="boundaries-section">
           <h2>Boundaries</h2>
-          <ul id="boundary-list" class="checkbox-list">
-            <li>
-              <label><input type="checkbox" id="boundary-toggle-state" /> State</label>
-            </li>
-            <li>
-              <label><input type="checkbox" id="boundary-toggle-lga" /> LGA</label>
-            </li>
-            <li>
-              <label><input type="checkbox" id="boundary-toggle-ward" /> Ward</label>
-            </li>
-          </ul>
-          <div class="hint">Click a boundary on the map to use it as your area of interest.</div>
+          <label for="boundary-state-select">State</label>
+          <select id="boundary-state-select" disabled>
+            <option value="lagos">Lagos</option>
+          </select>
+          <label for="boundary-lga-select">Local Government Area</label>
+          <select id="boundary-lga-select">
+            <option value="">Loading LGAs…</option>
+          </select>
+          <label for="boundary-ward-select">Ward</label>
+          <select id="boundary-ward-select" disabled>
+            <option value="">Select an LGA first…</option>
+          </select>
+          <div class="hint">
+            Pick an LGA to see its wards, then pick a ward — the map zooms to it and it becomes
+            your area of interest for analysis.
+          </div>
         </section>
 
         <section id="aoi-section">
