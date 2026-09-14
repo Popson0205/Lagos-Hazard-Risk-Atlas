@@ -36,7 +36,11 @@ export class LayerManager {
 
     let leafletLayer: L.Layer;
     if (detail.layer_type === "raster" && detail.tile_url) {
-      leafletLayer = L.tileLayer(detail.tile_url, { opacity: 0.75 });
+      const maxNativeZoom = detail.style?.max_native_zoom as number | undefined;
+      leafletLayer = L.tileLayer(detail.tile_url, {
+        opacity: 0.75,
+        ...(maxNativeZoom ? { maxNativeZoom } : {}),
+      });
     } else if (detail.layer_type === "vector" && detail.features_url) {
       const geojson = await api.getFeatures(layerId);
       leafletLayer = L.geoJSON(geojson, {

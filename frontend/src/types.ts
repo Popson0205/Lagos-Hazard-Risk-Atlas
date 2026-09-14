@@ -17,8 +17,12 @@ export interface LayerStyle {
   colormap_name?: string;
   rescale?: string;
   classification?: string;
-  breaks?: number[];
+  breaks?: (number | string)[];
   colors?: string[];
+  /** A plain public XYZ tile template (e.g. JRC Global Surface Water) —
+   * served directly, bypassing TiTiler/STAC entirely. */
+  xyz_url?: string;
+  max_native_zoom?: number;
 }
 
 export interface Layer {

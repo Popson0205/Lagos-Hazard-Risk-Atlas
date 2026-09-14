@@ -228,6 +228,11 @@ def stac_statistics_url(item_json_url: str, assets: list[str], expression: str |
         params.append(("assets", asset))
     if expression:
         params.append(("expression", expression))
+        # Without this, rio-tiler names each asset's expression variable
+        # "{asset}_b1" (assuming a multi-band file), not the bare asset name
+        # our recipes' expressions use (e.g. "lwir11*0.00341..."). That
+        # mismatch is exactly what threw "Invalid band/asset name 'lwir11'".
+        params.append(("asset_as_band", "true"))
     return f"{settings.titiler_base_url}/stac/statistics", params
 
 
@@ -255,6 +260,12 @@ def stac_tile_url(
         params.append(("assets", asset))
     if expression:
         params.append(("expression", expression))
+        # Same asset_as_band fix as stac_statistics_url above — tiles didn't
+        # error without it, but that means rio-tiler silently fell back to
+        # some other band interpretation rather than raising, so the
+        # temperature/NDWI/NDVI values actually rendered were very likely
+        # wrong even though a colored image came back with no error.
+        params.append(("asset_as_band", "true"))
     if rescale:
         params.append(("rescale", rescale))
     if colormap_name:

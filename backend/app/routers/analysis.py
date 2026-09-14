@@ -94,6 +94,14 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
     style = layer.style or {}
     stac_recipe = style.get("stac")
 
+    if style.get("xyz_url") and not stac_recipe and not layer.raster_url:
+        raise HTTPException(
+            status_code=422,
+            detail="This layer is served as pre-rendered reference tiles (e.g. JRC Global "
+            "Surface Water), not raw pixel data, so there's nothing to compute zonal "
+            "statistics from — it's a visual reference layer only.",
+        )
+
     if stac_recipe:
         try:
             item = stac_client.find_best_scene(

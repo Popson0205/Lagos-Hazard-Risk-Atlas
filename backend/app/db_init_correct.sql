@@ -93,6 +93,23 @@ INSERT INTO layers (id, hazard_theme_id, scenario_id, name, layer_type, source, 
 VALUES ('drought_water_stress_ndvi_live', 'drought_water_stress', 'baseline', 'Vegetation Stress (Live, NDVI)', 'raster', 'Sentinel-2 L2A NDVI (via Microsoft Planetary Computer)', 'NDVI', '10m', 'NDVI = (NIR - Red) / (NIR + Red), computed live from the least-cloudy Sentinel-2 scene over Lagos in the last 60 days — a standard vegetation-vigor proxy for drought/water stress, not a validated drought index.', NULL, '{"colormap_name": "rdylgn", "rescale": "-1,1", "stac": {"collection": "sentinel-2-l2a", "assets": ["B08", "B04"], "expression": "(B08-B04)/(B08+B04)", "rescale": "-1,1", "colormap_name": "rdylgn", "max_cloud_cover": 20, "lookback_days": 60}}'::jsonb, TRUE)
 ON CONFLICT (id) DO NOTHING;
 
+-- The original coastal_erosion_shoreline_baseline entry (a described-but-
+-- never-implemented NDWI/DSAS pipeline, with zero rows in hazard_features)
+-- has been replaced by two genuinely real data sources: OpenStreetMap's
+-- current coastline, and JRC's actual multi-decade water-change product.
+DELETE FROM hazard_features WHERE layer_id = 'coastal_erosion_shoreline_baseline';
+DELETE FROM layers WHERE id = 'coastal_erosion_shoreline_baseline';
+
 INSERT INTO layers (id, hazard_theme_id, scenario_id, name, layer_type, source, unit, resolution, methodology, raster_url, style, is_public)
-VALUES ('coastal_erosion_shoreline_baseline', 'coastal_erosion', 'baseline', 'Shoreline Position (Baseline)', 'vector', 'Sentinel-2 L2A shoreline extraction (via Microsoft Planetary Computer)', 'm/year (erosion rate)', '10m', 'NDWI-based shoreline extraction across multi-year Sentinel-2 composites; rate computed via DSAS-style transects.', NULL, '{"classification": "erosion_rate", "breaks": [-5, -2, -0.5, 0.5, 2], "colors": ["#7f0000", "#d7301f", "#fdae61", "#a6d96a", "#1a9850", "#006837"]}'::jsonb, TRUE)
+VALUES ('coastal_erosion_osm_coastline', 'coastal_erosion', 'baseline', 'Coastline (OpenStreetMap, current)', 'vector', 'OpenStreetMap contributors, via the Overpass API (ODbL — https://www.openstreetmap.org/copyright)', NULL, NULL, 'The current mapped coastline (natural=coastline ways) from OpenStreetMap — a real, community-mapped snapshot of shoreline position, not a computed erosion rate. On its own this shows where the coast is today; combine it with the JRC Global Surface Water Change layer below to see how it has actually moved. Ingested via backend/scripts/fetch_osm_coastline.py — re-run periodically to refresh, since OSM coastline edits happen continuously.', NULL, '{"line_color": "#38bdf8", "line_weight": 2}'::jsonb, TRUE)
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO layers (id, hazard_theme_id, scenario_id, name, layer_type, source, unit, resolution, methodology, raster_url, style, is_public)
+VALUES ('coastal_erosion_jrc_gsw_change', 'coastal_erosion', 'baseline', 'Land/Water Change, 1984–2021 (JRC Global Surface Water)', 'raster', 'EC Joint Research Centre / Google — Global Surface Water Explorer v1.4 (Pekel et al. 2016, Nature, doi:10.1038/nature20584). Attribution required: ''Source: EC JRC/Google''.', NULL, '30m (Landsat, 1984–2021 composite)', 'Pre-rendered reference tiles from JRC''s Global Surface Water ''change'' layer: blue = permanent water gain (land lost to the sea — an erosion signal), red = permanent water loss (land gained/reclaimed — an accretion signal), over the full 1984–2021 Landsat archive. This is a genuine multi-decade change product (unlike the single-scene ''live'' layers elsewhere in this catalogue), served directly from Google Cloud Storage as pre-styled PNG tiles — not routed through TiTiler/STAC, and not stats-capable (the source is styled imagery, not raw pixel values), so ''Run analysis'' on this layer returns an explanation rather than numbers. Tiles are undefined above zoom 13.', NULL, '{"xyz_url": "https://storage.googleapis.com/global-surface-water/tiles2021/change/{z}/{x}/{y}.png", "max_native_zoom": 13, "breaks": ["Water gain (erosion signal)", "Water loss (accretion signal)"], "colors": ["#3b82f6", "#dc2626"]}'::jsonb, TRUE)
+ON CONFLICT (id) DO NOTHING;
+
+-- Real coastline geometry for coastal_erosion_osm_coastline comes from
+-- backend/scripts/fetch_osm_coastline.py, which fetches it fresh from
+-- OpenStreetMap and prints ready-to-run SQL — run it and paste that
+-- output in separately, since it needs a live network call this static
+-- file can't make.

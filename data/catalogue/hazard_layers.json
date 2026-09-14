@@ -78,20 +78,38 @@
     "is_public": true
   },
   {
-    "id": "coastal_erosion_shoreline_baseline",
+    "id": "coastal_erosion_osm_coastline",
     "hazard_theme_id": "coastal_erosion",
     "scenario_id": "baseline",
-    "name": "Shoreline Position (Baseline)",
+    "name": "Coastline (OpenStreetMap, current)",
     "layer_type": "vector",
-    "source": "Sentinel-2 L2A shoreline extraction (via Microsoft Planetary Computer)",
-    "unit": "m/year (erosion rate)",
-    "resolution": "10m",
-    "methodology": "NDWI-based shoreline extraction across multi-year Sentinel-2 composites; rate computed via DSAS-style transects.",
+    "source": "OpenStreetMap contributors, via the Overpass API (ODbL — https://www.openstreetmap.org/copyright)",
+    "unit": null,
+    "resolution": null,
+    "methodology": "The current mapped coastline (natural=coastline ways) from OpenStreetMap — a real, community-mapped snapshot of shoreline position, not a computed erosion rate. On its own this shows where the coast is today; combine it with the JRC Global Surface Water Change layer below to see how it has actually moved. Ingested via backend/scripts/fetch_osm_coastline.py — re-run periodically to refresh, since OSM coastline edits happen continuously.",
     "raster_url": null,
     "style": {
-      "classification": "erosion_rate",
-      "breaks": [-5, -2, -0.5, 0.5, 2],
-      "colors": ["#7f0000", "#d7301f", "#fdae61", "#a6d96a", "#1a9850", "#006837"]
+      "line_color": "#38bdf8",
+      "line_weight": 2
+    },
+    "is_public": true
+  },
+  {
+    "id": "coastal_erosion_jrc_gsw_change",
+    "hazard_theme_id": "coastal_erosion",
+    "scenario_id": "baseline",
+    "name": "Land/Water Change, 1984\u20132021 (JRC Global Surface Water)",
+    "layer_type": "raster",
+    "source": "EC Joint Research Centre / Google \u2014 Global Surface Water Explorer v1.4 (Pekel et al. 2016, Nature, doi:10.1038/nature20584). Attribution required: 'Source: EC JRC/Google'.",
+    "unit": null,
+    "resolution": "30m (Landsat, 1984\u20132021 composite)",
+    "methodology": "Pre-rendered reference tiles from JRC's Global Surface Water 'change' layer: blue = permanent water gain (land lost to the sea \u2014 an erosion signal), red = permanent water loss (land gained/reclaimed \u2014 an accretion signal), over the full 1984\u20132021 Landsat archive. This is a genuine multi-decade change product (unlike the single-scene 'live' layers elsewhere in this catalogue), served directly from Google Cloud Storage as pre-styled PNG tiles \u2014 not routed through TiTiler/STAC, and not stats-capable (the source is styled imagery, not raw pixel values), so 'Run analysis' on this layer returns an explanation rather than numbers. Tiles are undefined above zoom 13.",
+    "raster_url": null,
+    "style": {
+      "xyz_url": "https://storage.googleapis.com/global-surface-water/tiles2021/change/{z}/{x}/{y}.png",
+      "max_native_zoom": 13,
+      "breaks": ["Water gain (erosion signal)", "Water loss (accretion signal)"],
+      "colors": ["#3b82f6", "#dc2626"]
     },
     "is_public": true
   }

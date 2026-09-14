@@ -45,8 +45,16 @@ def get_layer(layer_id: str, request: Request, db: Session = Depends(get_db)):
     cloud_cover = None
 
     if layer.layer_type == "raster":
-        stac_recipe = (layer.style or {}).get("stac")
-        if stac_recipe:
+        style = layer.style or {}
+        stac_recipe = style.get("stac")
+        xyz_url = style.get("xyz_url")
+        if xyz_url:
+            # A plain pre-rendered public XYZ tile service (e.g. JRC Global
+            # Surface Water) — served straight from its own host, no
+            # TiTiler/STAC involved at all. Different provider entirely from
+            # the Planetary Computer "live" layers below.
+            tile_url = xyz_url
+        elif stac_recipe:
             # Live layer: pick a fresh Planetary Computer scene and compute
             # the hazard's band-math expression on the fly (no stored COG
             # for this layer — layer.raster_url stays null).
