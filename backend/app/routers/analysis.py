@@ -134,7 +134,10 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
             str(request.base_url), stac_recipe["collection"], item.id
         )
         url, params = stac_client.stac_statistics_url(
-            item_json_url, assets=stac_recipe["assets"], expression=stac_recipe.get("expression")
+            item_json_url,
+            assets=stac_recipe["assets"],
+            expression=stac_recipe.get("expression"),
+            nodata=stac_recipe.get("nodata"),
         )
         observed_at = str(item.datetime) if item.datetime else None
     elif layer.raster_url:

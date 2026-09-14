@@ -254,7 +254,9 @@ def stac_item_json_url(request_base_url: str, collection: str, item_id: str) -> 
     return f"{request_base_url}api/v1/imagery/item/{collection}/{item_id}.json"
 
 
-def stac_statistics_url(item_json_url: str, assets: list[str], expression: str | None = None) -> tuple[str, list[tuple[str, str]]]:
+def stac_statistics_url(
+    item_json_url: str, assets: list[str], expression: str | None = None, nodata: float | None = None
+) -> tuple[str, list[tuple[str, str]]]:
     """URL + query params for TiTiler's POST /stac/statistics — same asset
     URL as stac_tile_url above, but for zonal stats over an AOI instead of a
     map tile. TiTiler expects the AOI as a GeoJSON Feature/FeatureCollection
@@ -268,12 +270,21 @@ def stac_statistics_url(item_json_url: str, assets: list[str], expression: str |
     literal "B03" gets read as band index 3, not "the asset named B03",
     throwing "Invalid band/asset name 'b03'". b1/b2/... side-steps this
     entirely since it's the convention rio-tiler expects in the first place.
+
+    `nodata` matters a lot here specifically: Landsat/Sentinel-2 fill pixels
+    (cloud gaps, scene edges) are commonly 0 in the raw band, and without an
+    explicit nodata value TiTiler can't tell those apart from real
+    readings — they get counted as "valid" and run through the expression
+    like everything else, producing a uniform, wrong result (e.g. LST's
+    formula turns raw 0 into a bogus ~-124°C) rather than being excluded.
     """
     params: list[tuple[str, str]] = [("url", item_json_url)]
     for asset in assets:
         params.append(("assets", asset))
     if expression:
         params.append(("expression", expression))
+    if nodata is not None:
+        params.append(("nodata", str(nodata)))
     return f"{settings.titiler_base_url}/stac/statistics", params
 
 
@@ -289,6 +300,7 @@ def stac_tile_url(
     expression: str | None = None,
     rescale: str | None = None,
     colormap_name: str | None = None,
+    nodata: float | None = None,
 ) -> str:
     """Build a TiTiler /stac/tiles URL template that reads one or more
     assets from a STAC item (via item_json_url) and optionally combines them
@@ -297,7 +309,8 @@ def stac_tile_url(
     storing the source imagery ourselves.
 
     See stac_statistics_url's docstring on why expressions must use
-    positional b1/b2/... band references rather than literal asset names.
+    positional b1/b2/... band references rather than literal asset names,
+    and why `nodata` needs to be passed explicitly.
     """
     params: list[tuple[str, str]] = [("url", item_json_url)]
     for asset in assets:
@@ -308,5 +321,7 @@ def stac_tile_url(
         params.append(("rescale", rescale))
     if colormap_name:
         params.append(("colormap_name", colormap_name))
+    if nodata is not None:
+        params.append(("nodata", str(nodata)))
     query = urlencode(params, safe="{}/:")
     return f"{settings.titiler_base_url}/stac/tiles/{{z}}/{{x}}/{{y}}.png?{query}"

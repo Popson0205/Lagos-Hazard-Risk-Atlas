@@ -114,6 +114,7 @@ def get_layer(
                 expression=stac_recipe.get("expression"),
                 rescale=stac_recipe.get("rescale"),
                 colormap_name=stac_recipe.get("colormap_name"),
+                nodata=stac_recipe.get("nodata"),
             )
             observed_at = str(item.datetime) if item.datetime else None
             cloud_cover = item.properties.get("eo:cloud_cover")

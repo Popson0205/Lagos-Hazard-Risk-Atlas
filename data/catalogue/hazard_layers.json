@@ -8,19 +8,22 @@
     "source": "Landsat Collection 2 Level-2 (via Microsoft Planetary Computer)",
     "unit": "C",
     "resolution": "30m",
-    "methodology": "LST derived from Landsat thermal band, atmospherically corrected surface temperature product. Computed live per request from the least-cloudy Landsat scene over Lagos in the last 90 days (see backend/app/services/hazard_recipes.py) — not a fixed historical baseline.",
+    "methodology": "LST derived from Landsat thermal band, atmospherically corrected surface temperature product. Computed live per request from the least-cloudy Landsat scene over Lagos in the last 90 days (see backend/app/services/hazard_recipes.py) \u2014 not a fixed historical baseline.",
     "raster_url": null,
     "style": {
       "colormap_name": "inferno",
       "rescale": "20,45",
       "stac": {
         "collection": "landsat-c2-l2",
-        "assets": ["lwir11"],
+        "assets": [
+          "lwir11"
+        ],
         "expression": "b1*0.00341802+149.0-273.15",
         "rescale": "20,45",
         "colormap_name": "inferno",
         "max_cloud_cover": 20,
-        "lookback_days": 90
+        "lookback_days": 90,
+        "nodata": 0
       }
     },
     "is_public": true
@@ -34,19 +37,23 @@
     "source": "Sentinel-2 L2A NDWI (via Microsoft Planetary Computer)",
     "unit": "NDWI",
     "resolution": "10m",
-    "methodology": "NDWI = (Green - NIR) / (Green + NIR), computed live from the least-cloudy Sentinel-2 scene over Lagos in the last 60 days. This is a current inundation/water-extent proxy, not a flood-risk or return-period model — see backend/app/services/hazard_recipes.py.",
+    "methodology": "NDWI = (Green - NIR) / (Green + NIR), computed live from the least-cloudy Sentinel-2 scene over Lagos in the last 60 days. This is a current inundation/water-extent proxy, not a flood-risk or return-period model \u2014 see backend/app/services/hazard_recipes.py.",
     "raster_url": null,
     "style": {
       "colormap_name": "rdbu",
       "rescale": "-1,1",
       "stac": {
         "collection": "sentinel-2-l2a",
-        "assets": ["B03", "B08"],
+        "assets": [
+          "B03",
+          "B08"
+        ],
         "expression": "(b1-b2)/(b1+b2)",
         "rescale": "-1,1",
         "colormap_name": "rdbu",
         "max_cloud_cover": 20,
-        "lookback_days": 60
+        "lookback_days": 60,
+        "nodata": 0
       }
     },
     "is_public": true
@@ -60,19 +67,23 @@
     "source": "Sentinel-2 L2A NDVI (via Microsoft Planetary Computer)",
     "unit": "NDVI",
     "resolution": "10m",
-    "methodology": "NDVI = (NIR - Red) / (NIR + Red), computed live from the least-cloudy Sentinel-2 scene over Lagos in the last 60 days — a standard vegetation-vigor proxy for drought/water stress, not a validated drought index.",
+    "methodology": "NDVI = (NIR - Red) / (NIR + Red), computed live from the least-cloudy Sentinel-2 scene over Lagos in the last 60 days \u2014 a standard vegetation-vigor proxy for drought/water stress, not a validated drought index.",
     "raster_url": null,
     "style": {
       "colormap_name": "rdylgn",
       "rescale": "-1,1",
       "stac": {
         "collection": "sentinel-2-l2a",
-        "assets": ["B08", "B04"],
+        "assets": [
+          "B08",
+          "B04"
+        ],
         "expression": "(b1-b2)/(b1+b2)",
         "rescale": "-1,1",
         "colormap_name": "rdylgn",
         "max_cloud_cover": 20,
-        "lookback_days": 60
+        "lookback_days": 60,
+        "nodata": 0
       }
     },
     "is_public": true
@@ -83,10 +94,10 @@
     "scenario_id": "baseline",
     "name": "Coastline (OpenStreetMap, current)",
     "layer_type": "vector",
-    "source": "OpenStreetMap contributors, via the Overpass API (ODbL — https://www.openstreetmap.org/copyright)",
+    "source": "OpenStreetMap contributors, via the Overpass API (ODbL \u2014 https://www.openstreetmap.org/copyright)",
     "unit": null,
     "resolution": null,
-    "methodology": "The current mapped coastline (natural=coastline ways) from OpenStreetMap — a real, community-mapped snapshot of shoreline position, not a computed erosion rate. On its own this shows where the coast is today; combine it with the JRC Global Surface Water Change layer below to see how it has actually moved. Ingested via backend/scripts/fetch_osm_coastline.py — re-run periodically to refresh, since OSM coastline edits happen continuously.",
+    "methodology": "The current mapped coastline (natural=coastline ways) from OpenStreetMap \u2014 a real, community-mapped snapshot of shoreline position, not a computed erosion rate. On its own this shows where the coast is today; combine it with the JRC Global Surface Water Change layer below to see how it has actually moved. Ingested via backend/scripts/fetch_osm_coastline.py \u2014 re-run periodically to refresh, since OSM coastline edits happen continuously.",
     "raster_url": null,
     "style": {
       "line_color": "#38bdf8",
@@ -108,8 +119,14 @@
     "style": {
       "xyz_url": "https://storage.googleapis.com/global-surface-water/tiles2021/change/{z}/{x}/{y}.png",
       "max_native_zoom": 13,
-      "breaks": ["Water gain (erosion signal)", "Water loss (accretion signal)"],
-      "colors": ["#3b82f6", "#dc2626"]
+      "breaks": [
+        "Water gain (erosion signal)",
+        "Water loss (accretion signal)"
+      ],
+      "colors": [
+        "#3b82f6",
+        "#dc2626"
+      ]
     },
     "is_public": true
   }
