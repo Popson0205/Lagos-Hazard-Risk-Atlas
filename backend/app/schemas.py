@@ -73,17 +73,6 @@ class STACItemOut(BaseModel):
     assets: dict[str, str]  # asset key -> already-signed href
 
 
-class ImagerySearchOut(BaseModel):
-    """GET /imagery/search's full response: the scene list to browse/pick
-    from, plus whether the fallback (widened window, no cloud filter) is what
-    actually produced it, and what range was actually searched."""
-
-    items: list[STACItemOut]
-    relaxed_search: bool = False
-    searched_start: str
-    searched_end: str
-
-
 class IdentifyResult(BaseModel):
     layer_id: str
     value: Any | None = None
@@ -96,16 +85,10 @@ class AnalysisRequest(BaseModel):
     layer_id: str
     geometry: dict[str, Any]  # GeoJSON geometry for the area of interest
     operation: Literal["zonal_stats", "area_by_class"] = "zonal_stats"
-    # Same historical-date anchor as GET /layers/{id}?date=... — lets zonal
-    # stats be computed against the same past scene the map is showing,
-    # instead of always defaulting to "most recent". No effect on vector
-    # layers or xyz-tile layers (see routers/analysis.py).
-    date: str | None = None
-    # A specific STAC item id the user picked from the manual imagery search
-    # (GET /imagery/search), for the same collection as the layer's recipe —
-    # takes priority over `date` when both are given, since it pins the exact
-    # scene rather than just anchoring a search window.
-    item_id: str | None = None
+    # Pin an exact scene (from GET /api/v1/imagery/search) instead of
+    # auto-picking the most recent one — same as GET /layers/{id}?scene_id=.
+    # No effect on vector layers or xyz-tile layers (see routers/analysis.py).
+    scene_id: str | None = None
 
 
 class SearchResult(BaseModel):

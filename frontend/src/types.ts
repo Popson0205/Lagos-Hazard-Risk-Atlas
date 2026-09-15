@@ -23,15 +23,19 @@ export interface LayerStyle {
    * served directly, bypassing TiTiler/STAC entirely. */
   xyz_url?: string;
   max_native_zoom?: number;
-  /** Present only on live STAC-recipe raster layers — which Planetary
-   * Computer collection this layer's imagery comes from, e.g.
-   * "sentinel-2-l2a" or "landsat-c2-l2". Drives which collection the
-   * imagery search-and-select panel searches for this layer. */
-  stac?: {
-    collection: string;
-    max_cloud_cover?: number;
-    lookback_days?: number;
-  };
+  /** Present only on "live" layers — which Planetary Computer STAC
+   * collection to browse/search scenes from (see STACItem below). */
+  stac?: { collection: string };
+}
+
+/** One Planetary Computer scene, as returned by GET /api/v1/imagery/search —
+ * this is what the scene-browser list (main.ts) renders for the user to
+ * pick from, replacing the old single-date-anchor picker. */
+export interface STACItem {
+  id: string;
+  collection: string;
+  datetime?: string | null;
+  cloud_cover?: number | null;
 }
 
 export interface Layer {
@@ -58,25 +62,6 @@ export interface LayerDetail extends Layer {
   observed_at?: string | null;
   cloud_cover?: number | null;
   relaxed_search?: boolean;
-}
-
-/** One Planetary Computer STAC item from the manual imagery search panel
- * (GET /imagery/search) — a candidate scene the user can pick to pin a live
- * raster layer to, instead of always showing the auto-picked "most recent"
- * scene. */
-export interface StacItem {
-  id: string;
-  collection: string;
-  datetime?: string | null;
-  cloud_cover?: number | null;
-  assets: Record<string, string>;
-}
-
-export interface ImagerySearchResult {
-  items: StacItem[];
-  relaxed_search: boolean;
-  searched_start: string;
-  searched_end: string;
 }
 
 export interface SearchResult {
@@ -120,11 +105,9 @@ export interface AnalysisRequest {
   layer_id: string;
   geometry: GeoJSON.Geometry;
   operation: "zonal_stats" | "area_by_class";
-  /** Same historical-date anchor as api.getLayer's date param. Ignored if
-   * item_id is also given. */
-  date?: string;
-  /** Same manually-picked-scene pin as api.getLayer's itemId param. */
-  item_id?: string;
+  /** Pin an exact scene (from GET /api/v1/imagery/search) instead of
+   * auto-picking the most recent one — same as api.getLayer's scene_id. */
+  scene_id?: string;
 }
 
 export interface AnalysisResult {

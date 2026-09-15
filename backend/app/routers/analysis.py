@@ -1,5 +1,4 @@
 import json
-from datetime import date as date_type
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -94,12 +93,6 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
     it, so we don't need our own rasterio/rasterstats code path."""
     style = layer.style or {}
     stac_recipe = style.get("stac")
-    # Scope the auto-picked scene search to the AOI itself, not all of
-    # Lagos state — otherwise "least cloudy scene over the whole state" can
-    # easily be a Sentinel-2 granule that doesn't geographically cover the
-    # selected area at all, and every pixel in the AOI comes back masked
-    # (100% nodata) even though the request "succeeds".
-    aoi_bbox = list(shape(body.geometry).bounds)
 
     if style.get("xyz_url") and not stac_recipe and not layer.raster_url:
         raise HTTPException(
@@ -110,44 +103,23 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
         )
 
     if stac_recipe:
-        relaxed_search = False
-        if body.item_id:
-            # A specific scene from the manual imagery search-and-select
-            # panel — use it directly, same as routers/layers.py's get_layer.
-            try:
-                item = stac_client.get_item_by_id(stac_recipe["collection"], body.item_id)
-            except stac_client.NoScenesFoundError as exc:
-                raise HTTPException(status_code=404, detail=str(exc)) from exc
-            except Exception as exc:  # noqa: BLE001
-                raise HTTPException(
-                    status_code=502, detail=f"Could not fetch the selected scene: {exc}"
-                ) from exc
-        else:
-            anchor_date = None
-            if body.date:
-                try:
-                    anchor_date = date_type.fromisoformat(body.date)
-                except ValueError as exc:
-                    raise HTTPException(
-                        status_code=400, detail=f"Invalid date '{body.date}' — expected YYYY-MM-DD"
-                    ) from exc
-                if anchor_date > date_type.today():
-                    raise HTTPException(status_code=400, detail="date cannot be in the future")
-
-            try:
+        try:
+            if body.scene_id:
+                item = stac_client.get_item_by_id(stac_recipe["collection"], body.scene_id)
+                relaxed_search = False
+            else:
                 item, relaxed_search = stac_client.find_best_scene_with_fallback(
                     collection=stac_recipe["collection"],
-                    bbox=aoi_bbox,
+                    bbox=stac_recipe.get("bbox"),
                     lookback_days=stac_recipe.get("lookback_days", 90),
                     max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
-                    anchor_date=anchor_date,
                 )
-            except stac_client.NoScenesFoundError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
-            except Exception as exc:  # noqa: BLE001
-                raise HTTPException(
-                    status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
-                ) from exc
+        except stac_client.NoScenesFoundError as exc:
+            raise HTTPException(status_code=404 if body.scene_id else 503, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
+            ) from exc
 
         item_json_url = stac_client.stac_item_json_url(
             str(request.base_url), stac_recipe["collection"], item.id

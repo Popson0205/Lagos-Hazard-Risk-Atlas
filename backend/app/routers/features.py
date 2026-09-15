@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -23,22 +23,9 @@ def get_features(
         raise HTTPException(status_code=404, detail="Vector layer not found")
 
     stmt = select(HazardFeature).where(HazardFeature.layer_id == layer_id)
-    if bbox:
-        try:
-            min_lon, min_lat, max_lon, max_lat = (float(v) for v in bbox.split(","))
-        except ValueError:
-            raise HTTPException(
-                status_code=400, detail="bbox must be 'min_lon,min_lat,max_lon,max_lat'"
-            )
-        # Scope to the selected area of interest (state/LGA/ward/drawn AOI)
-        # using ST_Intersects with an envelope — see section 6's guidance on
-        # extent-based queries. This is a bounding-box filter, not an exact
-        # polygon clip; a feature that merely overlaps the AOI's bbox corner
-        # can still come back even if it's outside the AOI's true shape.
-        # Exact polygon clipping (ST_Intersection against the AOI geometry
-        # itself) is a reasonable follow-up if that precision matters.
-        envelope = func.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
-        stmt = stmt.where(func.ST_Intersects(HazardFeature.geom, envelope))
+    # NOTE: bbox filtering should use ST_Intersects with an extent-based index
+    # (section 6: "spatial indexes and extent-based queries") — left as a
+    # follow-up once real geometries are loaded; parsing is stubbed here.
     rows = db.execute(stmt).scalars().all()
 
     features = [

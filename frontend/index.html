@@ -26,34 +26,29 @@
           <select id="scenario-select"></select>
         </section>
 
-        <section id="imagery-search-section">
-          <h2>Imagery</h2>
-          <label for="imagery-date-start">From</label>
-          <input id="imagery-date-start" type="date" />
-          <label for="imagery-date-end">To</label>
-          <input id="imagery-date-end" type="date" />
-          <label for="imagery-max-cloud">Max cloud cover (%)</label>
-          <input id="imagery-max-cloud" type="number" value="20" min="0" max="100" />
+        <section id="scene-search-section">
+          <label>Imagery scene</label>
+          <div class="scene-date-row">
+            <input id="scene-date-start" type="date" aria-label="Search from date" />
+            <input id="scene-date-end" type="date" aria-label="Search to date" />
+          </div>
+          <label for="scene-max-cloud">Max cloud cover (%)</label>
+          <input id="scene-max-cloud" type="number" value="30" min="0" max="100" />
           <div class="button-row">
-            <button id="imagery-search-btn">🛰️ Search scenes</button>
+            <button id="search-scenes-btn" type="button">Search scenes</button>
           </div>
           <div class="hint">
-            Searches Planetary Computer's Sentinel-2/Landsat catalogue for the active layer's
-            collection over the selected area (or all of Lagos, if none is selected). Pick a
-            scene below to pin the map to it — otherwise the least-cloudy recent scene is used.
-            Has no effect on the Coastal Erosion reference layers, which aren't a single dated
-            scene.
+            Browse real satellite passes over Lagos for the active layer and pick one — applies to
+            Extreme Heat, Coastal Flooding, and Drought (leave unsearched for the most recent
+            available). Has no effect on the Coastal Erosion reference layers, which aren't
+            anchored to a single scene.
           </div>
-          <div class="status-msg" id="imagery-search-status"></div>
-          <ul id="imagery-scene-list"></ul>
+          <div id="scene-search-status" class="hint"></div>
+          <ul id="scene-list"></ul>
         </section>
 
         <section id="layer-list-section">
           <h2>Layers</h2>
-          <div class="hint">
-            The theme's default layer switches on automatically. Add more here only to compare
-            or overlay — most themes have just the one.
-          </div>
           <ul id="layer-list"></ul>
         </section>
 
@@ -63,10 +58,10 @@
         </section>
 
         <section id="boundaries-section">
-          <h2>Area of Interest</h2>
+          <h2>Boundaries</h2>
           <label for="boundary-state-select">State</label>
           <select id="boundary-state-select" disabled>
-            <option value="">Loading…</option>
+            <option value="lagos">Lagos</option>
           </select>
           <label for="boundary-lga-select">Local Government Area</label>
           <select id="boundary-lga-select">
@@ -74,25 +69,25 @@
           </select>
           <label for="boundary-ward-select">Ward</label>
           <select id="boundary-ward-select" disabled>
-            <option value="">Whole LGA (optional — narrow to a ward)</option>
+            <option value="">Select an LGA first…</option>
           </select>
           <div class="hint">
-            Pick a state, an LGA, or a ward — any level becomes your area of interest and the
-            map zooms to it. Narrowing from LGA to a specific ward shrinks the area; clearing
-            the ward back to blank goes back to the whole LGA.
+            Pick an LGA to see its wards, then pick a ward — the map zooms to it and it becomes
+            your area of interest for analysis.
           </div>
         </section>
 
         <section id="aoi-section">
-          <div id="aoi-summary" class="hint">No area selected. Pick a boundary above, or draw your own.</div>
+          <h2>Area of Interest</h2>
+          <div id="aoi-summary" class="hint">No area selected. Click a boundary, or draw your own.</div>
           <div class="button-row">
-            <button id="aoi-draw-btn" type="button">Draw custom AOI</button>
+            <button id="aoi-draw-btn" type="button">Draw AOI</button>
             <button id="aoi-finish-btn" type="button" hidden>Finish drawing</button>
             <button id="aoi-cancel-btn" type="button" hidden>Cancel</button>
             <button id="aoi-clear-btn" type="button" hidden>Clear</button>
           </div>
           <div class="button-row">
-            <button id="aoi-run-analysis-btn" type="button" disabled>Run analysis</button>
+            <button id="aoi-run-analysis-btn" type="button" disabled>Run analysis on active layer</button>
           </div>
           <div id="aoi-result"></div>
         </section>

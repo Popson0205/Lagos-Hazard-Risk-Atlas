@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from ..schemas import ImagerySearchOut, STACItemOut
+from ..schemas import STACItemOut
 from ..services import stac_client
 
 router = APIRouter(prefix="/api/v1/imagery", tags=["imagery"])
 
 
-@router.get("/search", response_model=ImagerySearchOut)
+@router.get("/search", response_model=list[STACItemOut])
 def search_imagery(
     bbox: str | None = Query(
         None, description="minlon,minlat,maxlon,maxlat — defaults to Lagos State"
@@ -18,19 +18,14 @@ def search_imagery(
     max_cloud_cover: float = Query(20.0, ge=0, le=100),
     limit: int = Query(12, le=50),
 ):
-    """Search Planetary Computer's open STAC catalogue for scenes over the AOI,
-    for the manual browse-and-pick imagery panel — this is the 'open
-    planetary' imagery source referenced in the architecture doc: free
-    Sentinel-2/Landsat COGs, no API key required.
+    """Search Planetary Computer's open STAC catalogue for scenes over the AOI.
 
-    If the requested date range/cloud-cover threshold turns up nothing, the
-    search is automatically retried with a widened window and no cloud
-    filter (see stac_client.search_imagery_with_fallback) rather than just
-    returning an empty list — common in Lagos's monsoon season.
+    This is the 'open planetary' imagery source referenced in the
+    architecture doc — free Sentinel-2/Landsat COGs, no API key required.
     """
     bbox_list = [float(v) for v in bbox.split(",")] if bbox else None
     try:
-        items, relaxed_search, searched_start, searched_end = stac_client.search_imagery_with_fallback(
+        items = stac_client.search_imagery(
             bbox=bbox_list,
             collections=[collection],
             datetime_range=datetime_range,
@@ -40,12 +35,7 @@ def search_imagery(
     except Exception as exc:  # noqa: BLE001 — surface STAC errors plainly to the client
         raise HTTPException(status_code=502, detail=f"STAC search failed: {exc}") from exc
 
-    return ImagerySearchOut(
-        items=[stac_client.item_to_dict(item) for item in items],
-        relaxed_search=relaxed_search,
-        searched_start=searched_start,
-        searched_end=searched_end,
-    )
+    return [stac_client.item_to_dict(item) for item in items]
 
 
 @router.get("/item/{collection}/{item_id}.json")

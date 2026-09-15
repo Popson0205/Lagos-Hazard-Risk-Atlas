@@ -6,9 +6,8 @@ import { renderLegend } from "./map/legend";
 import { setupIdentify } from "./map/identify";
 import { BoundaryManager, type AoiSelection } from "./map/boundaries";
 import { PolygonDrawTool, type DrawnAoi } from "./map/draw";
-import { geometryBbox } from "./map/geometryUtils";
 import { api } from "./api/client";
-import type { HazardTheme, Scenario, Layer, StacItem } from "./types";
+import type { HazardTheme, Scenario, Layer } from "./types";
 
 type Aoi = AoiSelection | DrawnAoi;
 
@@ -20,19 +19,18 @@ async function main() {
 
   const hazardSelect = document.getElementById("hazard-select") as HTMLSelectElement;
   const scenarioSelect = document.getElementById("scenario-select") as HTMLSelectElement;
-  const imageryDateStart = document.getElementById("imagery-date-start") as HTMLInputElement;
-  const imageryDateEnd = document.getElementById("imagery-date-end") as HTMLInputElement;
-  const imageryMaxCloud = document.getElementById("imagery-max-cloud") as HTMLInputElement;
-  const imagerySearchBtn = document.getElementById("imagery-search-btn") as HTMLButtonElement;
-  const imagerySearchStatusEl = document.getElementById("imagery-search-status") as HTMLDivElement;
-  const imagerySceneListEl = document.getElementById("imagery-scene-list") as HTMLUListElement;
+  const sceneDateStart = document.getElementById("scene-date-start") as HTMLInputElement;
+  const sceneDateEnd = document.getElementById("scene-date-end") as HTMLInputElement;
+  const sceneMaxCloud = document.getElementById("scene-max-cloud") as HTMLInputElement;
+  const searchScenesBtn = document.getElementById("search-scenes-btn") as HTMLButtonElement;
+  const sceneSearchStatusEl = document.getElementById("scene-search-status") as HTMLDivElement;
+  const sceneListEl = document.getElementById("scene-list") as HTMLUListElement;
   const layerListEl = document.getElementById("layer-list") as HTMLUListElement;
   const legendEl = document.getElementById("legend") as HTMLDivElement;
   const identifyResultEl = document.getElementById("identify-result") as HTMLDivElement;
   const searchInput = document.getElementById("search-input") as HTMLInputElement;
   const searchResultsEl = document.getElementById("search-results") as HTMLUListElement;
 
-  const stateSelect = document.getElementById("boundary-state-select") as HTMLSelectElement;
   const lgaSelect = document.getElementById("boundary-lga-select") as HTMLSelectElement;
   const wardSelect = document.getElementById("boundary-ward-select") as HTMLSelectElement;
   const aoiSummaryEl = document.getElementById("aoi-summary") as HTMLDivElement;
@@ -62,13 +60,11 @@ async function main() {
     clearDrawnAoiLayer();
 
     if (aoi.source === "drawn") {
-      // A custom polygon replaces any boundary highlight — but
-      // selectBoundary() already owns its own layer swap, so only clear
-      // here for the "drawn" branch; clearing unconditionally would wipe
-      // out a boundary highlight the instant selectBoundary() just added it.
+      // A custom polygon replaces any ward highlight — but selectWard()
+      // already owns its own layer swap, so only clear here for the
+      // "drawn" branch; clearing unconditionally would wipe out a ward
+      // highlight the instant selectWard() just added it.
       boundaryManager.clearSelection();
-      stateSelect.value = "";
-      lgaSelect.value = "";
       wardSelect.value = "";
       drawnAoiLayer = L.geoJSON(aoi.geometry, {
         style: { color: "#f472b6", weight: 2, fillOpacity: 0.1 },
@@ -77,11 +73,6 @@ async function main() {
     } else {
       aoiSummaryEl.textContent = `${aoi.level.toUpperCase()}: ${aoi.name}`;
     }
-
-    // Rescope every already-active layer (raster tile bounds, vector
-    // feature fetch) to this area — this is what makes "toggle on Layers"
-    // actually show only the selected boundary instead of all of Lagos.
-    layers.setAoi(aoi.geometry);
 
     clearBtn.hidden = false;
     runAnalysisBtn.disabled = !layers.getTopActiveLayerId();
@@ -92,8 +83,7 @@ async function main() {
     currentAoi = null;
     boundaryManager.clearSelection();
     clearDrawnAoiLayer();
-    layers.setAoi(null);
-    aoiSummaryEl.textContent = "No area selected. Pick a state, LGA, or ward above, or draw your own.";
+    aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
     clearBtn.hidden = true;
     runAnalysisBtn.disabled = true;
     aoiResultEl.textContent = "";
@@ -120,7 +110,7 @@ async function main() {
     cancelBtn.hidden = true;
     if (!result) {
       alert("Place at least 3 points before finishing.");
-      if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a state, LGA, or ward above, or draw your own.";
+      if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
       return;
     }
     setAoi(result);
@@ -131,24 +121,15 @@ async function main() {
     drawBtn.hidden = false;
     finishBtn.hidden = true;
     cancelBtn.hidden = true;
-    if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a state, LGA, or ward above, or draw your own.";
+    if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
   });
 
   clearBtn.addEventListener("click", () => {
-    stateSelect.value = "";
-    lgaSelect.value = "";
     wardSelect.value = "";
-    resetWardOptions("Select an LGA first…", true);
-    boundaryManager.showLgaContext(null).catch(() => {});
     clearAoi();
   });
 
-  // --- Admin boundary cascade: State -> LGA -> Ward. Any level can be
-  // picked directly as the AOI — you don't have to drill down to a ward to
-  // run analysis; an LGA or the whole state is just as valid. Narrowing
-  // from LGA to a specific ward shrinks the AOI to that ward; clearing the
-  // ward selection back to blank re-widens it to the LGA rather than
-  // clearing the AOI entirely.
+  // --- Admin boundary cascade: State (Lagos, fixed) -> LGA -> Ward ---
   boundaryManager.loadStateContext().catch((err) => {
     console.error("Could not load the Lagos state outline:", err);
   });
@@ -156,20 +137,6 @@ async function main() {
   function resetWardOptions(placeholder: string, disabled: boolean): void {
     wardSelect.innerHTML = `<option value="">${placeholder}</option>`;
     wardSelect.disabled = disabled;
-  }
-
-  try {
-    const state = await boundaryManager.getState();
-    if (state) {
-      stateSelect.innerHTML =
-        `<option value="">Not selected</option>` +
-        `<option value="${state.code}">${state.name} (whole state)</option>`;
-      stateSelect.disabled = false;
-    } else {
-      stateSelect.innerHTML = `<option value="">Unavailable</option>`;
-    }
-  } catch (err) {
-    stateSelect.innerHTML = `<option value="">Could not load</option>`;
   }
 
   try {
@@ -181,37 +148,14 @@ async function main() {
     lgaSelect.innerHTML = `<option value="">Could not load LGAs</option>`;
   }
 
-  stateSelect.addEventListener("change", async () => {
-    const stateCode = stateSelect.value;
-    lgaSelect.value = "";
-    wardSelect.value = "";
-    resetWardOptions("Select an LGA first…", true);
-    await boundaryManager.showLgaContext(null);
-
-    if (!stateCode) {
-      clearAoi();
-      return;
-    }
-    stateSelect.disabled = true;
-    try {
-      await boundaryManager.selectBoundary("state", stateCode);
-    } catch (err) {
-      stateSelect.value = "";
-      alert(`Could not load the state boundary: ${(err as Error).message}`);
-    } finally {
-      stateSelect.disabled = false;
-    }
-  });
-
   lgaSelect.addEventListener("change", async () => {
     const lgaCode = lgaSelect.value;
-    stateSelect.value = "";
     wardSelect.value = "";
+    clearAoi();
 
     if (!lgaCode) {
       await boundaryManager.showLgaContext(null);
       resetWardOptions("Select an LGA first…", true);
-      clearAoi();
       return;
     }
 
@@ -220,12 +164,10 @@ async function main() {
     try {
       const [wards] = await Promise.all([
         boundaryManager.listWards(lgaCode),
-        // Picking an LGA is a valid AOI on its own — selectBoundary sets it
-        // immediately, without waiting for a ward to be picked within it.
-        boundaryManager.selectBoundary("lga", lgaCode),
+        boundaryManager.showLgaContext(lgaCode),
       ]);
       wardSelect.innerHTML =
-        `<option value="">Whole LGA (optional — narrow to a ward)</option>` +
+        `<option value="">Select ward…</option>` +
         wards.map((w) => `<option value="${w.code}">${w.name}</option>`).join("");
       wardSelect.disabled = false;
     } catch (err) {
@@ -239,22 +181,12 @@ async function main() {
   wardSelect.addEventListener("change", async () => {
     const wardCode = wardSelect.value;
     if (!wardCode) {
-      // Un-narrowing back to "whole LGA", not clearing the AOI entirely —
-      // the LGA itself is still a perfectly valid area to analyze.
-      if (lgaSelect.value) {
-        try {
-          await boundaryManager.selectBoundary("lga", lgaSelect.value);
-        } catch (err) {
-          alert(`Could not reload the LGA boundary: ${(err as Error).message}`);
-        }
-      } else {
-        clearAoi();
-      }
+      clearAoi();
       return;
     }
     wardSelect.disabled = true;
     try {
-      await boundaryManager.selectBoundary("ward", wardCode);
+      await boundaryManager.selectWard(wardCode);
     } catch (err) {
       wardSelect.value = "";
       alert(`Could not load this ward's boundary: ${(err as Error).message}`);
@@ -263,99 +195,83 @@ async function main() {
     }
   });
 
-  // --- Imagery search-and-select (live STAC raster layers only) ---
-  // Mirrors FarmScan's "search live scenes" flow: pick a date range + max
-  // cloud cover, search Planetary Computer, then click a scene from the
-  // results to pin the map to it (instead of always showing the
-  // auto-picked least-cloudy "most recent" scene).
-  imageryDateStart.max = new Date().toISOString().slice(0, 10);
-  imageryDateEnd.max = new Date().toISOString().slice(0, 10);
+  // --- Imagery scene browser (live STAC raster layers only) ---
+  // Replaces the old single-date-anchor picker with a FarmScan-style flow:
+  // search a date range, see every real scene that matched (date + cloud
+  // cover), and pick exactly one rather than trusting an auto-pick.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  sceneDateStart.max = todayStr;
+  sceneDateEnd.max = todayStr;
 
-  function showImageryStatus(msg: string, kind: "info" | "error" | "success"): void {
-    imagerySearchStatusEl.textContent = msg;
-    imagerySearchStatusEl.className = `status-msg show ${kind}`;
+  function formatSceneDate(iso: string | null | undefined): string {
+    if (!iso) return "unknown date";
+    return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   }
 
-  function clearImagerySelection(): void {
-    layers.setItemId(null);
-    imagerySceneListEl.querySelectorAll("li.selected").forEach((el) => el.classList.remove("selected"));
-  }
-
-  function activeStacCollection(): string | null {
-    return layers.getTopActiveDetail()?.style?.stac?.collection ?? null;
-  }
-
-  function renderSceneList(items: StacItem[]): void {
-    imagerySceneListEl.innerHTML = "";
-    for (const item of items) {
+  function renderSceneList(scenes: { id: string; datetime?: string | null; cloud_cover?: number | null }[]): void {
+    sceneListEl.innerHTML = "";
+    for (const scene of scenes) {
       const li = document.createElement("li");
-      const dateLabel = document.createElement("span");
-      dateLabel.textContent = item.datetime ? item.datetime.slice(0, 10) : item.id;
-      const cloudLabel = document.createElement("span");
-      cloudLabel.className = "cloud";
-      cloudLabel.textContent = item.cloud_cover != null ? `☁ ${item.cloud_cover.toFixed(0)}%` : "";
-      li.appendChild(dateLabel);
-      li.appendChild(cloudLabel);
-      if (item.id === layers.getItemId()) li.classList.add("selected");
+      const dateSpan = document.createElement("span");
+      dateSpan.textContent = formatSceneDate(scene.datetime);
+      const cloudSpan = document.createElement("span");
+      cloudSpan.className = "scene-cloud";
+      cloudSpan.textContent =
+        scene.cloud_cover !== undefined && scene.cloud_cover !== null ? `☁ ${scene.cloud_cover.toFixed(0)}%` : "";
+      li.appendChild(dateSpan);
+      li.appendChild(cloudSpan);
       li.addEventListener("click", async () => {
-        imagerySceneListEl.querySelectorAll("li.selected").forEach((el) => el.classList.remove("selected"));
+        sceneListEl.querySelectorAll("li").forEach((x) => x.classList.remove("selected"));
         li.classList.add("selected");
-        layers.setItemId(item.id);
+        sceneSearchStatusEl.textContent = "Loading selected scene...";
         try {
+          layers.setSceneId(scene.id);
           await layers.refreshActiveRasterLayers();
-          showImageryStatus(`Pinned to the ${dateLabel.textContent} scene.`, "success");
+          sceneSearchStatusEl.textContent = `Showing ${formatSceneDate(scene.datetime)}.`;
           if (aoiResultEl.textContent) {
             aoiResultEl.textContent = "Imagery scene changed — click \u201cRun analysis\u201d again to refresh this result.";
           }
         } catch (err) {
-          showImageryStatus(`Could not load that scene: ${(err as Error).message}`, "error");
+          sceneSearchStatusEl.textContent = `Could not load that scene: ${(err as Error).message}`;
         }
       });
-      imagerySceneListEl.appendChild(li);
+      sceneListEl.appendChild(li);
     }
   }
 
-  imagerySearchBtn.addEventListener("click", async () => {
-    const collection = activeStacCollection();
+  searchScenesBtn.addEventListener("click", async () => {
+    const activeDetail = layers.getTopActiveDetail();
+    const collection = activeDetail?.style?.stac?.collection;
     if (!collection) {
-      showImageryStatus("Toggle on a live imagery layer (Extreme Heat, Coastal Flooding, or Drought) first.", "error");
+      sceneSearchStatusEl.textContent =
+        "Toggle on a live layer first (Extreme Heat, Coastal Flooding, or Drought) — this searches whichever one is active.";
+      sceneListEl.innerHTML = "";
       return;
     }
-    const startDate = imageryDateStart.value || undefined;
-    const endDate = imageryDateEnd.value || undefined;
-    if ((startDate && !endDate) || (!startDate && endDate)) {
-      showImageryStatus("Pick both a start and end date, or leave both blank for the last 90 days.", "error");
-      return;
-    }
-    const maxCloudCover = Number(imageryMaxCloud.value) || 20;
-    const bbox = currentAoi ? geometryBbox(currentAoi.geometry) : undefined;
 
-    imagerySearchBtn.disabled = true;
-    showImageryStatus("Searching Planetary Computer…", "info");
-    imagerySceneListEl.innerHTML = "";
+    // Default to the last 90 days if the user hasn't picked a range —
+    // matches the recipes' own default lookback window.
+    const end = sceneDateEnd.value || todayStr;
+    const start =
+      sceneDateStart.value ||
+      new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const maxCloudCover = Number(sceneMaxCloud.value) || 30;
+
+    searchScenesBtn.disabled = true;
+    sceneSearchStatusEl.textContent = "Searching the satellite catalog...";
+    sceneListEl.innerHTML = "";
     try {
-      const result = await api.searchImagery({ collection, bbox, startDate, endDate, maxCloudCover, limit: 20 });
-      if (!result.items.length) {
-        showImageryStatus(
-          "No scenes found, even after widening the search window and dropping the cloud-cover filter.",
-          "error"
-        );
+      const scenes = await api.searchScenes({ collection, startDate: start, endDate: end, maxCloudCover });
+      if (scenes.length === 0) {
+        sceneSearchStatusEl.textContent = "No scenes found for that range/cloud filter — try widening it.";
         return;
       }
-      if (result.relaxed_search) {
-        showImageryStatus(
-          `No scenes in that range under ${maxCloudCover}% cloud cover \u2014 widened the search to ` +
-            `${result.searched_start} \u2013 ${result.searched_end} with no cloud filter and found ${result.items.length} scene(s).`,
-          "info"
-        );
-      } else {
-        showImageryStatus(`Found ${result.items.length} scene(s).`, "success");
-      }
-      renderSceneList(result.items);
+      sceneSearchStatusEl.textContent = `Found ${scenes.length} scene(s) for ${activeDetail!.name} — pick one.`;
+      renderSceneList(scenes);
     } catch (err) {
-      showImageryStatus(`${(err as Error).message} — the auto-picked most-recent scene is still used if you don't select one.`, "error");
+      sceneSearchStatusEl.textContent = `Search failed: ${(err as Error).message}`;
     } finally {
-      imagerySearchBtn.disabled = false;
+      searchScenesBtn.disabled = false;
     }
   });
 
@@ -375,8 +291,7 @@ async function main() {
         layer_id: layerId,
         geometry: currentAoi.geometry,
         operation,
-        item_id: layers.getItemId() || undefined,
-        date: layers.getItemId() ? undefined : layers.getDate() || undefined,
+        scene_id: layers.getSceneId() ?? undefined,
       });
       const lines =
         operation === "zonal_stats"
@@ -431,18 +346,12 @@ async function main() {
     const scenario = scenarioSelect.value || undefined;
     const layerCatalogue: Layer[] = await api.listLayers({ hazard, scenario });
 
-    // Switching theme/scenario should feel like a clean slate, not an
-    // overlay on whatever the previous theme left on the map.
-    layers.deactivateLayersNotIn(new Set(layerCatalogue.map((l) => l.id)));
-
     layerListEl.innerHTML = "";
     if (!layerCatalogue.length) {
       layerListEl.innerHTML = '<li style="color:#6b7280">No published layers for this selection yet.</li>';
-      runAnalysisBtn.disabled = true;
       return;
     }
 
-    const checkboxes: HTMLInputElement[] = [];
     for (const layer of layerCatalogue) {
       const li = document.createElement("li");
       const checkbox = document.createElement("input");
@@ -450,6 +359,14 @@ async function main() {
       checkbox.checked = layers.isActive(layer.id);
       checkbox.addEventListener("change", async () => {
         checkbox.disabled = true;
+        // A pinned scene_id is only meaningful for the collection it was
+        // searched against — toggling the layer selection at all resets it,
+        // so a Sentinel-2 scene picked for Coastal Flooding can't get sent
+        // to Landsat's collection when Extreme Heat becomes active instead
+        // (that would 404: the id doesn't exist in that collection).
+        layers.setSceneId(null);
+        sceneListEl.innerHTML = "";
+        sceneSearchStatusEl.textContent = "";
         try {
           await layers.toggle(layer.id);
         } catch (err) {
@@ -465,38 +382,10 @@ async function main() {
       li.appendChild(checkbox);
       li.appendChild(label);
       layerListEl.appendChild(li);
-      checkboxes.push(checkbox);
     }
-
-    // Auto-display: picking a theme is enough on its own for the common
-    // case (one layer per theme) — switch on the first/default layer
-    // automatically instead of requiring a separate checkbox click. Themes
-    // with more than one layer (e.g. coastal erosion's coastline + change
-    // detection) still just get their first layer auto-activated; the rest
-    // stay available in this list to add for comparison.
-    if (!layers.getTopActiveLayerId()) {
-      const first = layerCatalogue[0];
-      checkboxes[0].checked = true;
-      try {
-        await layers.toggle(first.id);
-      } catch (err) {
-        checkboxes[0].checked = false;
-        console.error("Could not auto-activate the default layer:", err);
-      }
-    }
-    runAnalysisBtn.disabled = !currentAoi || !layers.getTopActiveLayerId();
   }
 
-  hazardSelect.addEventListener("change", async () => {
-    // A different hazard theme almost always means a different (or no)
-    // STAC collection, so a previously-picked scene id no longer applies.
-    // The layer that's about to be auto-activated for the new theme will
-    // pick this up (currentItemId is read fresh on every activate()).
-    clearImagerySelection();
-    imagerySceneListEl.innerHTML = "";
-    imagerySearchStatusEl.className = "status-msg";
-    await refreshLayerList();
-  });
+  hazardSelect.addEventListener("change", refreshLayerList);
   scenarioSelect.addEventListener("change", refreshLayerList);
   await refreshLayerList();
 

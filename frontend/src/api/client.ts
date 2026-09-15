@@ -9,7 +9,7 @@ import type {
   BoundarySummary,
   AnalysisRequest,
   AnalysisResult,
-  ImagerySearchResult,
+  STACItem,
 } from "../types";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
@@ -48,40 +48,9 @@ export const api = {
     return getJSON<Layer[]>(`${BASE}/layers${suffix}`);
   },
 
-  getLayer: (layerId: string, opts: { date?: string | null; itemId?: string | null; bbox?: [number, number, number, number] | null } = {}) => {
-    const qs = new URLSearchParams();
-    if (opts.itemId) qs.set("item_id", opts.itemId);
-    else if (opts.date) qs.set("date", opts.date);
-    // Scopes the auto-picked scene search to the AOI, so the least-cloudy
-    // scene found actually covers the area being viewed — ignored
-    // server-side if item_id is set (a pinned scene doesn't need this).
-    if (opts.bbox && !opts.itemId) qs.set("bbox", opts.bbox.join(","));
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return getJSON<LayerDetail>(`${BASE}/layers/${layerId}${suffix}`);
-  },
-
-  /** Manual imagery search-and-select panel (mirrors FarmScan's "search
-   * live scenes" flow): browse Planetary Computer scenes over a bbox/date
-   * range/cloud-cover filter and let the user pick one, rather than only
-   * ever seeing the auto-picked least-cloudy scene. Falls back server-side
-   * to a widened window with no cloud filter if the search is empty. */
-  searchImagery: (params: {
-    collection: string;
-    bbox?: [number, number, number, number];
-    startDate?: string;
-    endDate?: string;
-    maxCloudCover?: number;
-    limit?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    qs.set("collection", params.collection);
-    if (params.bbox) qs.set("bbox", params.bbox.join(","));
-    if (params.startDate && params.endDate) {
-      qs.set("datetime", `${params.startDate}/${params.endDate}`);
-    }
-    if (params.maxCloudCover != null) qs.set("max_cloud_cover", String(params.maxCloudCover));
-    if (params.limit != null) qs.set("limit", String(params.limit));
-    return getJSON<ImagerySearchResult>(`${BASE}/imagery/search?${qs.toString()}`);
+  getLayer: (layerId: string, sceneId?: string | null) => {
+    const qs = sceneId ? `?scene_id=${encodeURIComponent(sceneId)}` : "";
+    return getJSON<LayerDetail>(`${BASE}/layers/${layerId}${qs}`);
   },
 
   getFeatures: (layerId: string, bbox?: [number, number, number, number]) => {
@@ -115,4 +84,22 @@ export const api = {
     getJSON<GeoJSON.Feature>(`${BASE}/boundaries/${level}/${encodeURIComponent(code)}`),
 
   runAnalysis: (request: AnalysisRequest) => postJSON<AnalysisResult>(`${BASE}/analysis`, request),
+
+  /** Browse real Planetary Computer scenes for a collection/date-range —
+   * this is the FarmScan-style "search, then pick one" flow that replaced
+   * the old single-date-anchor picker. */
+  searchScenes: (params: {
+    collection: string;
+    startDate: string;
+    endDate: string;
+    maxCloudCover?: number;
+  }) => {
+    const qs = new URLSearchParams({
+      collection: params.collection,
+      datetime: `${params.startDate}/${params.endDate}`,
+      max_cloud_cover: String(params.maxCloudCover ?? 30),
+      limit: "20",
+    });
+    return getJSON<STACItem[]>(`${BASE}/imagery/search?${qs.toString()}`);
+  },
 };

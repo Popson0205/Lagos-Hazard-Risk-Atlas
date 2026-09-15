@@ -37,8 +37,8 @@ select, input {
   border-radius: 6px;
 }
 
-#layer-list, #search-results { list-style: none; padding: 0; margin: 0; }
-#layer-list li, #search-results li {
+#layer-list, #search-results, #scene-list { list-style: none; padding: 0; margin: 0; }
+#layer-list li, #search-results li, #scene-list li {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -46,7 +46,11 @@ select, input {
   border-radius: 4px;
   cursor: pointer;
 }
-#layer-list li:hover, #search-results li:hover { background: #1f2937; }
+#layer-list li:hover, #search-results li:hover, #scene-list li:hover { background: #1f2937; }
+#scene-list li.selected { background: var(--accent); }
+#scene-list li .scene-cloud { margin-left: auto; color: var(--muted); font-size: 0.9em; }
+.scene-date-row { display: flex; gap: 6px; margin-bottom: 8px; }
+.scene-date-row input { flex: 1; min-width: 0; }
 
 #legend { font-size: 12px; }
 .legend-swatch { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 2px; vertical-align: middle; }
@@ -76,26 +80,5 @@ select, input {
 
 #aoi-result { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
 #aoi-summary { color: var(--text); }
-
-.status-msg { display: none; font-size: 12px; padding: 7px 9px; border-radius: 6px; margin: 6px 0; line-height: 1.4; }
-.status-msg.show { display: block; }
-.status-msg.info { background: #16233d; color: #93c5fd; }
-.status-msg.error { background: #3f1d1d; color: #fca5a5; }
-.status-msg.success { background: #14291f; color: #86efac; }
-
-#imagery-scene-list { list-style: none; padding: 0; margin: 4px 0 0; max-height: 220px; overflow-y: auto; }
-#imagery-scene-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  border: 1px solid transparent;
-}
-#imagery-scene-list li:hover { background: #1f2937; }
-#imagery-scene-list li.selected { background: #16233d; border-color: var(--accent); }
-#imagery-scene-list .cloud { color: var(--muted); }
 
 #map { flex: 1; }
