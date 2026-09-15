@@ -50,6 +50,10 @@
 
         <section id="layer-list-section">
           <h2>Layers</h2>
+          <div class="hint">
+            The theme's default layer switches on automatically. Add more here only to compare
+            or overlay — most themes have just the one.
+          </div>
           <ul id="layer-list"></ul>
         </section>
 
@@ -59,10 +63,10 @@
         </section>
 
         <section id="boundaries-section">
-          <h2>Boundaries</h2>
+          <h2>Area of Interest</h2>
           <label for="boundary-state-select">State</label>
           <select id="boundary-state-select" disabled>
-            <option value="lagos">Lagos</option>
+            <option value="">Loading…</option>
           </select>
           <label for="boundary-lga-select">Local Government Area</label>
           <select id="boundary-lga-select">
@@ -70,25 +74,25 @@
           </select>
           <label for="boundary-ward-select">Ward</label>
           <select id="boundary-ward-select" disabled>
-            <option value="">Select an LGA first…</option>
+            <option value="">Whole LGA (optional — narrow to a ward)</option>
           </select>
           <div class="hint">
-            Pick an LGA to see its wards, then pick a ward — the map zooms to it and it becomes
-            your area of interest for analysis.
+            Pick a state, an LGA, or a ward — any level becomes your area of interest and the
+            map zooms to it. Narrowing from LGA to a specific ward shrinks the area; clearing
+            the ward back to blank goes back to the whole LGA.
           </div>
         </section>
 
         <section id="aoi-section">
-          <h2>Area of Interest</h2>
-          <div id="aoi-summary" class="hint">No area selected. Click a boundary, or draw your own.</div>
+          <div id="aoi-summary" class="hint">No area selected. Pick a boundary above, or draw your own.</div>
           <div class="button-row">
-            <button id="aoi-draw-btn" type="button">Draw AOI</button>
+            <button id="aoi-draw-btn" type="button">Draw custom AOI</button>
             <button id="aoi-finish-btn" type="button" hidden>Finish drawing</button>
             <button id="aoi-cancel-btn" type="button" hidden>Cancel</button>
             <button id="aoi-clear-btn" type="button" hidden>Clear</button>
           </div>
           <div class="button-row">
-            <button id="aoi-run-analysis-btn" type="button" disabled>Run analysis on active layer</button>
+            <button id="aoi-run-analysis-btn" type="button" disabled>Run analysis</button>
           </div>
           <div id="aoi-result"></div>
         </section>

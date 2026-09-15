@@ -6,30 +6,11 @@ import { renderLegend } from "./map/legend";
 import { setupIdentify } from "./map/identify";
 import { BoundaryManager, type AoiSelection } from "./map/boundaries";
 import { PolygonDrawTool, type DrawnAoi } from "./map/draw";
+import { geometryBbox } from "./map/geometryUtils";
 import { api } from "./api/client";
 import type { HazardTheme, Scenario, Layer, StacItem } from "./types";
 
 type Aoi = AoiSelection | DrawnAoi;
-
-/** Bounding box [minLon, minLat, maxLon, maxLat] of any GeoJSON geometry —
- * used to scope the imagery search to the selected AOI rather than always
- * searching all of Lagos. */
-function geometryBbox(geometry: GeoJSON.Geometry): [number, number, number, number] {
-  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
-  const visit = (coords: any): void => {
-    if (typeof coords[0] === "number") {
-      const [lon, lat] = coords as [number, number];
-      if (lon < minLon) minLon = lon;
-      if (lon > maxLon) maxLon = lon;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
-    } else {
-      coords.forEach(visit);
-    }
-  };
-  visit((geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon).coordinates);
-  return [minLon, minLat, maxLon, maxLat];
-}
 
 async function main() {
   const map = createMap("map");
@@ -51,6 +32,7 @@ async function main() {
   const searchInput = document.getElementById("search-input") as HTMLInputElement;
   const searchResultsEl = document.getElementById("search-results") as HTMLUListElement;
 
+  const stateSelect = document.getElementById("boundary-state-select") as HTMLSelectElement;
   const lgaSelect = document.getElementById("boundary-lga-select") as HTMLSelectElement;
   const wardSelect = document.getElementById("boundary-ward-select") as HTMLSelectElement;
   const aoiSummaryEl = document.getElementById("aoi-summary") as HTMLDivElement;
@@ -80,11 +62,13 @@ async function main() {
     clearDrawnAoiLayer();
 
     if (aoi.source === "drawn") {
-      // A custom polygon replaces any ward highlight — but selectWard()
-      // already owns its own layer swap, so only clear here for the
-      // "drawn" branch; clearing unconditionally would wipe out a ward
-      // highlight the instant selectWard() just added it.
+      // A custom polygon replaces any boundary highlight — but
+      // selectBoundary() already owns its own layer swap, so only clear
+      // here for the "drawn" branch; clearing unconditionally would wipe
+      // out a boundary highlight the instant selectBoundary() just added it.
       boundaryManager.clearSelection();
+      stateSelect.value = "";
+      lgaSelect.value = "";
       wardSelect.value = "";
       drawnAoiLayer = L.geoJSON(aoi.geometry, {
         style: { color: "#f472b6", weight: 2, fillOpacity: 0.1 },
@@ -93,6 +77,11 @@ async function main() {
     } else {
       aoiSummaryEl.textContent = `${aoi.level.toUpperCase()}: ${aoi.name}`;
     }
+
+    // Rescope every already-active layer (raster tile bounds, vector
+    // feature fetch) to this area — this is what makes "toggle on Layers"
+    // actually show only the selected boundary instead of all of Lagos.
+    layers.setAoi(aoi.geometry);
 
     clearBtn.hidden = false;
     runAnalysisBtn.disabled = !layers.getTopActiveLayerId();
@@ -103,7 +92,8 @@ async function main() {
     currentAoi = null;
     boundaryManager.clearSelection();
     clearDrawnAoiLayer();
-    aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
+    layers.setAoi(null);
+    aoiSummaryEl.textContent = "No area selected. Pick a state, LGA, or ward above, or draw your own.";
     clearBtn.hidden = true;
     runAnalysisBtn.disabled = true;
     aoiResultEl.textContent = "";
@@ -130,7 +120,7 @@ async function main() {
     cancelBtn.hidden = true;
     if (!result) {
       alert("Place at least 3 points before finishing.");
-      if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
+      if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a state, LGA, or ward above, or draw your own.";
       return;
     }
     setAoi(result);
@@ -141,15 +131,24 @@ async function main() {
     drawBtn.hidden = false;
     finishBtn.hidden = true;
     cancelBtn.hidden = true;
-    if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
+    if (!currentAoi) aoiSummaryEl.textContent = "No area selected. Pick a state, LGA, or ward above, or draw your own.";
   });
 
   clearBtn.addEventListener("click", () => {
+    stateSelect.value = "";
+    lgaSelect.value = "";
     wardSelect.value = "";
+    resetWardOptions("Select an LGA first…", true);
+    boundaryManager.showLgaContext(null).catch(() => {});
     clearAoi();
   });
 
-  // --- Admin boundary cascade: State (Lagos, fixed) -> LGA -> Ward ---
+  // --- Admin boundary cascade: State -> LGA -> Ward. Any level can be
+  // picked directly as the AOI — you don't have to drill down to a ward to
+  // run analysis; an LGA or the whole state is just as valid. Narrowing
+  // from LGA to a specific ward shrinks the AOI to that ward; clearing the
+  // ward selection back to blank re-widens it to the LGA rather than
+  // clearing the AOI entirely.
   boundaryManager.loadStateContext().catch((err) => {
     console.error("Could not load the Lagos state outline:", err);
   });
@@ -157,6 +156,20 @@ async function main() {
   function resetWardOptions(placeholder: string, disabled: boolean): void {
     wardSelect.innerHTML = `<option value="">${placeholder}</option>`;
     wardSelect.disabled = disabled;
+  }
+
+  try {
+    const state = await boundaryManager.getState();
+    if (state) {
+      stateSelect.innerHTML =
+        `<option value="">Not selected</option>` +
+        `<option value="${state.code}">${state.name} (whole state)</option>`;
+      stateSelect.disabled = false;
+    } else {
+      stateSelect.innerHTML = `<option value="">Unavailable</option>`;
+    }
+  } catch (err) {
+    stateSelect.innerHTML = `<option value="">Could not load</option>`;
   }
 
   try {
@@ -168,14 +181,37 @@ async function main() {
     lgaSelect.innerHTML = `<option value="">Could not load LGAs</option>`;
   }
 
+  stateSelect.addEventListener("change", async () => {
+    const stateCode = stateSelect.value;
+    lgaSelect.value = "";
+    wardSelect.value = "";
+    resetWardOptions("Select an LGA first…", true);
+    await boundaryManager.showLgaContext(null);
+
+    if (!stateCode) {
+      clearAoi();
+      return;
+    }
+    stateSelect.disabled = true;
+    try {
+      await boundaryManager.selectBoundary("state", stateCode);
+    } catch (err) {
+      stateSelect.value = "";
+      alert(`Could not load the state boundary: ${(err as Error).message}`);
+    } finally {
+      stateSelect.disabled = false;
+    }
+  });
+
   lgaSelect.addEventListener("change", async () => {
     const lgaCode = lgaSelect.value;
+    stateSelect.value = "";
     wardSelect.value = "";
-    clearAoi();
 
     if (!lgaCode) {
       await boundaryManager.showLgaContext(null);
       resetWardOptions("Select an LGA first…", true);
+      clearAoi();
       return;
     }
 
@@ -184,10 +220,12 @@ async function main() {
     try {
       const [wards] = await Promise.all([
         boundaryManager.listWards(lgaCode),
-        boundaryManager.showLgaContext(lgaCode),
+        // Picking an LGA is a valid AOI on its own — selectBoundary sets it
+        // immediately, without waiting for a ward to be picked within it.
+        boundaryManager.selectBoundary("lga", lgaCode),
       ]);
       wardSelect.innerHTML =
-        `<option value="">Select ward…</option>` +
+        `<option value="">Whole LGA (optional — narrow to a ward)</option>` +
         wards.map((w) => `<option value="${w.code}">${w.name}</option>`).join("");
       wardSelect.disabled = false;
     } catch (err) {
@@ -201,12 +239,22 @@ async function main() {
   wardSelect.addEventListener("change", async () => {
     const wardCode = wardSelect.value;
     if (!wardCode) {
-      clearAoi();
+      // Un-narrowing back to "whole LGA", not clearing the AOI entirely —
+      // the LGA itself is still a perfectly valid area to analyze.
+      if (lgaSelect.value) {
+        try {
+          await boundaryManager.selectBoundary("lga", lgaSelect.value);
+        } catch (err) {
+          alert(`Could not reload the LGA boundary: ${(err as Error).message}`);
+        }
+      } else {
+        clearAoi();
+      }
       return;
     }
     wardSelect.disabled = true;
     try {
-      await boundaryManager.selectWard(wardCode);
+      await boundaryManager.selectBoundary("ward", wardCode);
     } catch (err) {
       wardSelect.value = "";
       alert(`Could not load this ward's boundary: ${(err as Error).message}`);
@@ -383,12 +431,18 @@ async function main() {
     const scenario = scenarioSelect.value || undefined;
     const layerCatalogue: Layer[] = await api.listLayers({ hazard, scenario });
 
+    // Switching theme/scenario should feel like a clean slate, not an
+    // overlay on whatever the previous theme left on the map.
+    layers.deactivateLayersNotIn(new Set(layerCatalogue.map((l) => l.id)));
+
     layerListEl.innerHTML = "";
     if (!layerCatalogue.length) {
       layerListEl.innerHTML = '<li style="color:#6b7280">No published layers for this selection yet.</li>';
+      runAnalysisBtn.disabled = true;
       return;
     }
 
+    const checkboxes: HTMLInputElement[] = [];
     for (const layer of layerCatalogue) {
       const li = document.createElement("li");
       const checkbox = document.createElement("input");
@@ -411,21 +465,36 @@ async function main() {
       li.appendChild(checkbox);
       li.appendChild(label);
       layerListEl.appendChild(li);
+      checkboxes.push(checkbox);
     }
+
+    // Auto-display: picking a theme is enough on its own for the common
+    // case (one layer per theme) — switch on the first/default layer
+    // automatically instead of requiring a separate checkbox click. Themes
+    // with more than one layer (e.g. coastal erosion's coastline + change
+    // detection) still just get their first layer auto-activated; the rest
+    // stay available in this list to add for comparison.
+    if (!layers.getTopActiveLayerId()) {
+      const first = layerCatalogue[0];
+      checkboxes[0].checked = true;
+      try {
+        await layers.toggle(first.id);
+      } catch (err) {
+        checkboxes[0].checked = false;
+        console.error("Could not auto-activate the default layer:", err);
+      }
+    }
+    runAnalysisBtn.disabled = !currentAoi || !layers.getTopActiveLayerId();
   }
 
   hazardSelect.addEventListener("change", async () => {
     // A different hazard theme almost always means a different (or no)
-    // STAC collection, so a previously-picked scene id no longer applies —
-    // drop it and let any still-active raster layer fall back to auto-pick.
+    // STAC collection, so a previously-picked scene id no longer applies.
+    // The layer that's about to be auto-activated for the new theme will
+    // pick this up (currentItemId is read fresh on every activate()).
     clearImagerySelection();
     imagerySceneListEl.innerHTML = "";
     imagerySearchStatusEl.className = "status-msg";
-    try {
-      await layers.refreshActiveRasterLayers();
-    } catch (err) {
-      console.error("Could not refresh imagery after hazard change:", err);
-    }
     await refreshLayerList();
   });
   scenarioSelect.addEventListener("change", refreshLayerList);

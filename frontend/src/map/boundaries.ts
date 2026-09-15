@@ -2,6 +2,8 @@ import L from "leaflet";
 import type { BoundaryFeatureProperties, BoundaryLevel, BoundarySummary } from "../types";
 import { api } from "../api/client";
 
+export type { BoundaryLevel };
+
 // `level` stays a general BoundaryLevel (not narrowed to "ward") so the
 // search box — which can zoom straight to a state, LGA, or ward result —
 // can keep building this same shape.
@@ -13,8 +15,9 @@ export interface AoiSelection {
   geometry: GeoJSON.Geometry;
 }
 
-/** Static, non-interactive outline shown once for context — Lagos is the only state. */
-const STATE_STYLE: L.PathOptions = {
+/** Static, non-interactive outline shown once for context before any state
+ * is explicitly picked as the AOI. */
+const STATE_CONTEXT_STYLE: L.PathOptions = {
   color: "#f97316",
   weight: 2,
   fill: false,
@@ -22,7 +25,8 @@ const STATE_STYLE: L.PathOptions = {
   interactive: false,
 };
 
-/** Light outline for the LGA currently narrowing the ward dropdown. */
+/** Light outline for the LGA currently narrowing the ward dropdown, before
+ * (or instead of) a ward being picked within it. */
 const LGA_CONTEXT_STYLE: L.PathOptions = {
   color: "#eab308",
   weight: 2,
@@ -32,8 +36,9 @@ const LGA_CONTEXT_STYLE: L.PathOptions = {
   interactive: false,
 };
 
-/** The ward the user has picked — this becomes the AOI for analysis. */
-const WARD_SELECTED_STYLE: L.PathOptions = {
+/** Whichever boundary (state, LGA, or ward) the user has actually picked —
+ * this becomes the AOI for analysis, at whatever level they chose. */
+const SELECTED_STYLE: L.PathOptions = {
   color: "#f472b6",
   weight: 3,
   fill: true,
@@ -41,28 +46,37 @@ const WARD_SELECTED_STYLE: L.PathOptions = {
 };
 
 /**
- * Drives the cascading State -> LGA -> Ward boundary selector. Lagos is the
- * only state, so it's drawn once as static context. Picking an LGA narrows
- * the ward list to that LGA and outlines it lightly; picking a ward zooms
- * the map to it, outlines it, and becomes the current AOI so analysis can
- * be run against it via TiTiler/zonal stats.
+ * Drives the cascading State -> LGA -> Ward boundary selector. Any of the
+ * three levels can be picked directly as the AOI — a state or an LGA run
+ * doesn't require drilling all the way down to a ward. Picking a level
+ * zooms the map to it, outlines it, and fires onSelect with it as the new
+ * AOI so analysis can be run against it (zonal stats / area-by-class) and
+ * so active layers get rescoped to it (see LayerManager.setAoi).
  */
 export class BoundaryManager {
   private map: L.Map;
-  private stateLayer: L.GeoJSON | null = null;
+  private stateContextLayer: L.GeoJSON | null = null;
   private lgaContextLayer: L.GeoJSON | null = null;
-  private wardLayer: L.GeoJSON | null = null;
+  private selectedLayer: L.GeoJSON | null = null;
   onSelect: (aoi: AoiSelection) => void = () => {};
 
   constructor(map: L.Map) {
     this.map = map;
   }
 
-  /** Draws the Lagos state outline once, for orientation. Not selectable. */
+  /** Draws the Lagos state outline once, for orientation, before the state
+   * itself is picked as the AOI. */
   async loadStateContext(): Promise<void> {
-    if (this.stateLayer) return;
+    if (this.stateContextLayer) return;
     const geojson = await api.getBoundaryGeoJSON("state");
-    this.stateLayer = L.geoJSON(geojson, { style: () => STATE_STYLE }).addTo(this.map);
+    this.stateContextLayer = L.geoJSON(geojson, { style: () => STATE_CONTEXT_STYLE }).addTo(this.map);
+  }
+
+  /** The one Lagos state record — used to populate the State dropdown with
+   * its real boundary code instead of a guessed/hardcoded value. */
+  async getState(): Promise<BoundarySummary | null> {
+    const states = await api.listBoundaries("state");
+    return states[0] ?? null;
   }
 
   listLgas(): Promise<BoundarySummary[]> {
@@ -73,7 +87,9 @@ export class BoundaryManager {
     return api.listBoundaries("ward", { parentCode: lgaCode });
   }
 
-  /** Outlines the given LGA (or clears the outline if lgaCode is null). */
+  /** Outlines the given LGA (or clears the outline if lgaCode is null).
+   * Purely visual context for narrowing the ward dropdown — selectBoundary
+   * is what actually sets the LGA as the AOI. */
   async showLgaContext(lgaCode: string | null): Promise<void> {
     if (this.lgaContextLayer) {
       this.map.removeLayer(this.lgaContextLayer);
@@ -84,19 +100,22 @@ export class BoundaryManager {
     this.lgaContextLayer = L.geoJSON(feature, { style: () => LGA_CONTEXT_STYLE }).addTo(this.map);
   }
 
-  /** Loads a ward's geometry, zooms to it, outlines it, and fires onSelect
-   * with it as the new AOI. */
-  async selectWard(code: string): Promise<AoiSelection> {
-    const feature = await api.getBoundaryFeature("ward", code);
+  /** Loads a boundary's geometry at any level (state, LGA, or ward), zooms
+   * to it, outlines it, and fires onSelect with it as the new AOI. This is
+   * the single entry point for "run analysis at this level" — a state or
+   * an LGA is just as valid an AOI as a ward. */
+  async selectBoundary(level: BoundaryLevel, code: string): Promise<AoiSelection> {
+    const feature = await api.getBoundaryFeature(level, code);
     this.clearSelection();
 
-    this.wardLayer = L.geoJSON(feature, { style: () => WARD_SELECTED_STYLE }).addTo(this.map);
-    this.map.fitBounds(this.wardLayer.getBounds(), { maxZoom: 16, padding: [24, 24] });
+    this.selectedLayer = L.geoJSON(feature, { style: () => SELECTED_STYLE }).addTo(this.map);
+    const maxZoom = level === "state" ? 11 : level === "lga" ? 13 : 16;
+    this.map.fitBounds(this.selectedLayer.getBounds(), { maxZoom, padding: [24, 24] });
 
     const props = feature.properties as BoundaryFeatureProperties | undefined;
     const aoi: AoiSelection = {
       source: "boundary",
-      level: "ward",
+      level,
       code,
       name: props?.name ?? code,
       geometry: feature.geometry!,
@@ -105,15 +124,16 @@ export class BoundaryManager {
     return aoi;
   }
 
-  /** Removes just the selected-ward highlight (keeps state/LGA context). */
+  /** Removes just the selected-boundary highlight (keeps state/LGA context
+   * outlines in place). */
   clearSelection(): void {
-    if (this.wardLayer) {
-      this.map.removeLayer(this.wardLayer);
-      this.wardLayer = null;
+    if (this.selectedLayer) {
+      this.map.removeLayer(this.selectedLayer);
+      this.selectedLayer = null;
     }
   }
 
-  /** Removes the ward highlight and the LGA context outline. */
+  /** Removes the selection highlight and the LGA context outline. */
   clearAll(): void {
     this.clearSelection();
     if (this.lgaContextLayer) {
