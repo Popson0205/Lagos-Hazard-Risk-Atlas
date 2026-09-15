@@ -7,9 +7,29 @@ import { setupIdentify } from "./map/identify";
 import { BoundaryManager, type AoiSelection } from "./map/boundaries";
 import { PolygonDrawTool, type DrawnAoi } from "./map/draw";
 import { api } from "./api/client";
-import type { HazardTheme, Scenario, Layer } from "./types";
+import type { HazardTheme, Scenario, Layer, StacItem } from "./types";
 
 type Aoi = AoiSelection | DrawnAoi;
+
+/** Bounding box [minLon, minLat, maxLon, maxLat] of any GeoJSON geometry —
+ * used to scope the imagery search to the selected AOI rather than always
+ * searching all of Lagos. */
+function geometryBbox(geometry: GeoJSON.Geometry): [number, number, number, number] {
+  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+  const visit = (coords: any): void => {
+    if (typeof coords[0] === "number") {
+      const [lon, lat] = coords as [number, number];
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    } else {
+      coords.forEach(visit);
+    }
+  };
+  visit((geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon).coordinates);
+  return [minLon, minLat, maxLon, maxLat];
+}
 
 async function main() {
   const map = createMap("map");
@@ -19,7 +39,12 @@ async function main() {
 
   const hazardSelect = document.getElementById("hazard-select") as HTMLSelectElement;
   const scenarioSelect = document.getElementById("scenario-select") as HTMLSelectElement;
-  const imageryDateInput = document.getElementById("imagery-date-input") as HTMLInputElement;
+  const imageryDateStart = document.getElementById("imagery-date-start") as HTMLInputElement;
+  const imageryDateEnd = document.getElementById("imagery-date-end") as HTMLInputElement;
+  const imageryMaxCloud = document.getElementById("imagery-max-cloud") as HTMLInputElement;
+  const imagerySearchBtn = document.getElementById("imagery-search-btn") as HTMLButtonElement;
+  const imagerySearchStatusEl = document.getElementById("imagery-search-status") as HTMLDivElement;
+  const imagerySceneListEl = document.getElementById("imagery-scene-list") as HTMLUListElement;
   const layerListEl = document.getElementById("layer-list") as HTMLUListElement;
   const legendEl = document.getElementById("legend") as HTMLDivElement;
   const identifyResultEl = document.getElementById("identify-result") as HTMLDivElement;
@@ -190,23 +215,99 @@ async function main() {
     }
   });
 
-  // --- Historical imagery date (live STAC raster layers only) ---
-  imageryDateInput.max = new Date().toISOString().slice(0, 10);
-  imageryDateInput.addEventListener("change", async () => {
-    imageryDateInput.disabled = true;
+  // --- Imagery search-and-select (live STAC raster layers only) ---
+  // Mirrors FarmScan's "search live scenes" flow: pick a date range + max
+  // cloud cover, search Planetary Computer, then click a scene from the
+  // results to pin the map to it (instead of always showing the
+  // auto-picked least-cloudy "most recent" scene).
+  imageryDateStart.max = new Date().toISOString().slice(0, 10);
+  imageryDateEnd.max = new Date().toISOString().slice(0, 10);
+
+  function showImageryStatus(msg: string, kind: "info" | "error" | "success"): void {
+    imagerySearchStatusEl.textContent = msg;
+    imagerySearchStatusEl.className = `status-msg show ${kind}`;
+  }
+
+  function clearImagerySelection(): void {
+    layers.setItemId(null);
+    imagerySceneListEl.querySelectorAll("li.selected").forEach((el) => el.classList.remove("selected"));
+  }
+
+  function activeStacCollection(): string | null {
+    return layers.getTopActiveDetail()?.style?.stac?.collection ?? null;
+  }
+
+  function renderSceneList(items: StacItem[]): void {
+    imagerySceneListEl.innerHTML = "";
+    for (const item of items) {
+      const li = document.createElement("li");
+      const dateLabel = document.createElement("span");
+      dateLabel.textContent = item.datetime ? item.datetime.slice(0, 10) : item.id;
+      const cloudLabel = document.createElement("span");
+      cloudLabel.className = "cloud";
+      cloudLabel.textContent = item.cloud_cover != null ? `☁ ${item.cloud_cover.toFixed(0)}%` : "";
+      li.appendChild(dateLabel);
+      li.appendChild(cloudLabel);
+      if (item.id === layers.getItemId()) li.classList.add("selected");
+      li.addEventListener("click", async () => {
+        imagerySceneListEl.querySelectorAll("li.selected").forEach((el) => el.classList.remove("selected"));
+        li.classList.add("selected");
+        layers.setItemId(item.id);
+        try {
+          await layers.refreshActiveRasterLayers();
+          showImageryStatus(`Pinned to the ${dateLabel.textContent} scene.`, "success");
+          if (aoiResultEl.textContent) {
+            aoiResultEl.textContent = "Imagery scene changed — click \u201cRun analysis\u201d again to refresh this result.";
+          }
+        } catch (err) {
+          showImageryStatus(`Could not load that scene: ${(err as Error).message}`, "error");
+        }
+      });
+      imagerySceneListEl.appendChild(li);
+    }
+  }
+
+  imagerySearchBtn.addEventListener("click", async () => {
+    const collection = activeStacCollection();
+    if (!collection) {
+      showImageryStatus("Toggle on a live imagery layer (Extreme Heat, Coastal Flooding, or Drought) first.", "error");
+      return;
+    }
+    const startDate = imageryDateStart.value || undefined;
+    const endDate = imageryDateEnd.value || undefined;
+    if ((startDate && !endDate) || (!startDate && endDate)) {
+      showImageryStatus("Pick both a start and end date, or leave both blank for the last 90 days.", "error");
+      return;
+    }
+    const maxCloudCover = Number(imageryMaxCloud.value) || 20;
+    const bbox = currentAoi ? geometryBbox(currentAoi.geometry) : undefined;
+
+    imagerySearchBtn.disabled = true;
+    showImageryStatus("Searching Planetary Computer…", "info");
+    imagerySceneListEl.innerHTML = "";
     try {
-      layers.setDate(imageryDateInput.value || null);
-      await layers.refreshActiveRasterLayers();
-      // A previously-run analysis result is now stale (it reflected the old
-      // date's scene), and re-running needs a fresh click anyway since the
-      // pixel values have changed under it.
-      if (aoiResultEl.textContent) {
-        aoiResultEl.textContent = "Imagery date changed — click \u201cRun analysis\u201d again to refresh this result.";
+      const result = await api.searchImagery({ collection, bbox, startDate, endDate, maxCloudCover, limit: 20 });
+      if (!result.items.length) {
+        showImageryStatus(
+          "No scenes found, even after widening the search window and dropping the cloud-cover filter.",
+          "error"
+        );
+        return;
       }
+      if (result.relaxed_search) {
+        showImageryStatus(
+          `No scenes in that range under ${maxCloudCover}% cloud cover \u2014 widened the search to ` +
+            `${result.searched_start} \u2013 ${result.searched_end} with no cloud filter and found ${result.items.length} scene(s).`,
+          "info"
+        );
+      } else {
+        showImageryStatus(`Found ${result.items.length} scene(s).`, "success");
+      }
+      renderSceneList(result.items);
     } catch (err) {
-      alert(`Could not load imagery for ${imageryDateInput.value}: ${(err as Error).message}`);
+      showImageryStatus(`${(err as Error).message} — the auto-picked most-recent scene is still used if you don't select one.`, "error");
     } finally {
-      imageryDateInput.disabled = false;
+      imagerySearchBtn.disabled = false;
     }
   });
 
@@ -226,7 +327,8 @@ async function main() {
         layer_id: layerId,
         geometry: currentAoi.geometry,
         operation,
-        date: imageryDateInput.value || undefined,
+        item_id: layers.getItemId() || undefined,
+        date: layers.getItemId() ? undefined : layers.getDate() || undefined,
       });
       const lines =
         operation === "zonal_stats"
@@ -312,7 +414,20 @@ async function main() {
     }
   }
 
-  hazardSelect.addEventListener("change", refreshLayerList);
+  hazardSelect.addEventListener("change", async () => {
+    // A different hazard theme almost always means a different (or no)
+    // STAC collection, so a previously-picked scene id no longer applies —
+    // drop it and let any still-active raster layer fall back to auto-pick.
+    clearImagerySelection();
+    imagerySceneListEl.innerHTML = "";
+    imagerySearchStatusEl.className = "status-msg";
+    try {
+      await layers.refreshActiveRasterLayers();
+    } catch (err) {
+      console.error("Could not refresh imagery after hazard change:", err);
+    }
+    await refreshLayerList();
+  });
   scenarioSelect.addEventListener("change", refreshLayerList);
   await refreshLayerList();
 

@@ -53,7 +53,14 @@ def get_layer(
         description="ISO date (YYYY-MM-DD) to anchor a live STAC layer's imagery "
         "search to — finds the least-cloudy scene in the lookback window ending on "
         "this date, instead of today. No effect on non-live raster layers or vector "
-        "layers.",
+        "layers. Ignored if item_id is also given.",
+    ),
+    item_id: str | None = Query(
+        default=None,
+        description="A specific STAC item id from GET /imagery/search (same collection "
+        "as the layer's recipe) to pin this layer to, instead of auto-picking the "
+        "least-cloudy scene — for the manual imagery search-and-select panel. Takes "
+        "priority over `date`.",
     ),
     db: Session = Depends(get_db),
 ):
@@ -87,23 +94,35 @@ def get_layer(
             # multi-decade 1984-2021 composite), so `date` is ignored here.
             tile_url = xyz_url
         elif stac_recipe:
-            # Live layer: pick a fresh Planetary Computer scene and compute
-            # the hazard's band-math expression on the fly (no stored COG
-            # for this layer — layer.raster_url stays null).
-            try:
-                item, relaxed_search = stac_client.find_best_scene_with_fallback(
-                    collection=stac_recipe["collection"],
-                    bbox=stac_recipe.get("bbox"),
-                    lookback_days=stac_recipe.get("lookback_days", 90),
-                    max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
-                    anchor_date=anchor_date,
-                )
-            except stac_client.NoScenesFoundError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
-            except Exception as exc:  # noqa: BLE001 — surface STAC/network errors plainly
-                raise HTTPException(
-                    status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
-                ) from exc
+            # Live layer: use a specific user-picked scene (item_id, from the
+            # manual imagery search-and-select panel) if given, otherwise
+            # auto-pick the least-cloudy scene the same way it always has —
+            # either way we compute the hazard's band-math expression on the
+            # fly (no stored COG for this layer — layer.raster_url stays null).
+            if item_id:
+                try:
+                    item = stac_client.get_item_by_id(stac_recipe["collection"], item_id)
+                except stac_client.NoScenesFoundError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc)) from exc
+                except Exception as exc:  # noqa: BLE001
+                    raise HTTPException(
+                        status_code=502, detail=f"Could not fetch the selected scene: {exc}"
+                    ) from exc
+            else:
+                try:
+                    item, relaxed_search = stac_client.find_best_scene_with_fallback(
+                        collection=stac_recipe["collection"],
+                        bbox=stac_recipe.get("bbox"),
+                        lookback_days=stac_recipe.get("lookback_days", 90),
+                        max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
+                        anchor_date=anchor_date,
+                    )
+                except stac_client.NoScenesFoundError as exc:
+                    raise HTTPException(status_code=503, detail=str(exc)) from exc
+                except Exception as exc:  # noqa: BLE001 — surface STAC/network errors plainly
+                    raise HTTPException(
+                        status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
+                    ) from exc
 
             item_json_url = stac_client.stac_item_json_url(
                 str(request.base_url), stac_recipe["collection"], item.id

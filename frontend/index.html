@@ -26,14 +26,26 @@
           <select id="scenario-select"></select>
         </section>
 
-        <section id="imagery-date-section">
-          <label for="imagery-date-input">Imagery date</label>
-          <input id="imagery-date-input" type="date" />
-          <div class="hint">
-            Finds the least-cloudy real satellite scene near this date, for the Extreme Heat,
-            Coastal Flooding, and Drought layers (leave blank for the most recent). Has no effect
-            on the Coastal Erosion reference layers, which aren't date-anchored to a single scene.
+        <section id="imagery-search-section">
+          <h2>Imagery</h2>
+          <label for="imagery-date-start">From</label>
+          <input id="imagery-date-start" type="date" />
+          <label for="imagery-date-end">To</label>
+          <input id="imagery-date-end" type="date" />
+          <label for="imagery-max-cloud">Max cloud cover (%)</label>
+          <input id="imagery-max-cloud" type="number" value="20" min="0" max="100" />
+          <div class="button-row">
+            <button id="imagery-search-btn">🛰️ Search scenes</button>
           </div>
+          <div class="hint">
+            Searches Planetary Computer's Sentinel-2/Landsat catalogue for the active layer's
+            collection over the selected area (or all of Lagos, if none is selected). Pick a
+            scene below to pin the map to it — otherwise the least-cloudy recent scene is used.
+            Has no effect on the Coastal Erosion reference layers, which aren't a single dated
+            scene.
+          </div>
+          <div class="status-msg" id="imagery-search-status"></div>
+          <ul id="imagery-scene-list"></ul>
         </section>
 
         <section id="layer-list-section">

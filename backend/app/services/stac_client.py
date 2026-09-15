@@ -125,6 +125,58 @@ def search_imagery(
     return list(search.items())
 
 
+def search_imagery_with_fallback(
+    bbox: list[float] | None,
+    collections: list[str],
+    datetime_range: str | None = None,
+    max_cloud_cover: float | None = 20.0,
+    limit: int = 12,
+) -> tuple[list, bool, str, str]:
+    """search_imagery, but if the requested date range / cloud-cover threshold
+    turns up nothing, automatically retries with a much wider window and no
+    cloud filter before giving up empty-handed — same fallback pattern as
+    find_best_scene_with_fallback, applied to the browse-and-pick list rather
+    than a single auto-picked scene. This is for the manual imagery search UI
+    (GET /api/v1/imagery/search): a tight range plus a strict cloud-cover cutoff
+    genuinely turns up nothing a lot of the time for Lagos's monsoon season, so
+    showing the user the closest scenes we could find — clearly labeled as a
+    widened search — is more useful than an empty list.
+
+    Returns (items, relaxed, searched_start, searched_end) — relaxed is True if
+    the fallback search is what actually produced the results, and
+    searched_start/end are the range that was actually searched (the original
+    range, or the widened one), so the UI can tell the user what happened.
+    """
+    today = datetime.utcnow().date()
+    if datetime_range and "/" in datetime_range:
+        start_str, end_str = datetime_range.split("/", 1)
+        start = date.fromisoformat(start_str)
+        end = date.fromisoformat(end_str)
+    else:
+        # No explicit range given — treat as "up to 90 days ending today",
+        # matching find_best_scene's default lookback.
+        end = today
+        start = end - timedelta(days=90)
+
+    items = search_imagery(bbox, collections, f"{start.isoformat()}/{end.isoformat()}", max_cloud_cover, limit)
+    if items:
+        return items, False, start.isoformat(), end.isoformat()
+
+    span_days = max((end - start).days, 1)
+    pad = timedelta(days=span_days * 1.5)
+    widened_start = start - pad
+    widened_end = min(end + pad, today)
+
+    items = search_imagery(
+        bbox,
+        collections,
+        f"{widened_start.isoformat()}/{widened_end.isoformat()}",
+        None,  # no cloud-cover filter on the fallback pass
+        limit,
+    )
+    return items, bool(items), widened_start.isoformat(), widened_end.isoformat()
+
+
 def item_to_dict(item) -> dict:
     """Flatten a signed pystac.Item down to the fields STACItemOut expects."""
     return {

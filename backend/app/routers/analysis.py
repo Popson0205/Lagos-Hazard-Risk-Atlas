@@ -104,31 +104,44 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
         )
 
     if stac_recipe:
-        anchor_date = None
-        if body.date:
+        relaxed_search = False
+        if body.item_id:
+            # A specific scene from the manual imagery search-and-select
+            # panel — use it directly, same as routers/layers.py's get_layer.
             try:
-                anchor_date = date_type.fromisoformat(body.date)
-            except ValueError as exc:
+                item = stac_client.get_item_by_id(stac_recipe["collection"], body.item_id)
+            except stac_client.NoScenesFoundError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except Exception as exc:  # noqa: BLE001
                 raise HTTPException(
-                    status_code=400, detail=f"Invalid date '{body.date}' — expected YYYY-MM-DD"
+                    status_code=502, detail=f"Could not fetch the selected scene: {exc}"
                 ) from exc
-            if anchor_date > date_type.today():
-                raise HTTPException(status_code=400, detail="date cannot be in the future")
+        else:
+            anchor_date = None
+            if body.date:
+                try:
+                    anchor_date = date_type.fromisoformat(body.date)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=400, detail=f"Invalid date '{body.date}' — expected YYYY-MM-DD"
+                    ) from exc
+                if anchor_date > date_type.today():
+                    raise HTTPException(status_code=400, detail="date cannot be in the future")
 
-        try:
-            item, relaxed_search = stac_client.find_best_scene_with_fallback(
-                collection=stac_recipe["collection"],
-                bbox=stac_recipe.get("bbox"),
-                lookback_days=stac_recipe.get("lookback_days", 90),
-                max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
-                anchor_date=anchor_date,
-            )
-        except stac_client.NoScenesFoundError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(
-                status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
-            ) from exc
+            try:
+                item, relaxed_search = stac_client.find_best_scene_with_fallback(
+                    collection=stac_recipe["collection"],
+                    bbox=stac_recipe.get("bbox"),
+                    lookback_days=stac_recipe.get("lookback_days", 90),
+                    max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
+                    anchor_date=anchor_date,
+                )
+            except stac_client.NoScenesFoundError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(
+                    status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
+                ) from exc
 
         item_json_url = stac_client.stac_item_json_url(
             str(request.base_url), stac_recipe["collection"], item.id

@@ -9,6 +9,7 @@ import type {
   BoundarySummary,
   AnalysisRequest,
   AnalysisResult,
+  ImagerySearchResult,
 } from "../types";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
@@ -47,9 +48,36 @@ export const api = {
     return getJSON<Layer[]>(`${BASE}/layers${suffix}`);
   },
 
-  getLayer: (layerId: string, date?: string | null) => {
-    const qs = date ? `?date=${encodeURIComponent(date)}` : "";
-    return getJSON<LayerDetail>(`${BASE}/layers/${layerId}${qs}`);
+  getLayer: (layerId: string, opts: { date?: string | null; itemId?: string | null } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.itemId) qs.set("item_id", opts.itemId);
+    else if (opts.date) qs.set("date", opts.date);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return getJSON<LayerDetail>(`${BASE}/layers/${layerId}${suffix}`);
+  },
+
+  /** Manual imagery search-and-select panel (mirrors FarmScan's "search
+   * live scenes" flow): browse Planetary Computer scenes over a bbox/date
+   * range/cloud-cover filter and let the user pick one, rather than only
+   * ever seeing the auto-picked least-cloudy scene. Falls back server-side
+   * to a widened window with no cloud filter if the search is empty. */
+  searchImagery: (params: {
+    collection: string;
+    bbox?: [number, number, number, number];
+    startDate?: string;
+    endDate?: string;
+    maxCloudCover?: number;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    qs.set("collection", params.collection);
+    if (params.bbox) qs.set("bbox", params.bbox.join(","));
+    if (params.startDate && params.endDate) {
+      qs.set("datetime", `${params.startDate}/${params.endDate}`);
+    }
+    if (params.maxCloudCover != null) qs.set("max_cloud_cover", String(params.maxCloudCover));
+    if (params.limit != null) qs.set("limit", String(params.limit));
+    return getJSON<ImagerySearchResult>(`${BASE}/imagery/search?${qs.toString()}`);
   },
 
   getFeatures: (layerId: string, bbox?: [number, number, number, number]) => {

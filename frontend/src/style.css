@@ -77,4 +77,25 @@ select, input {
 #aoi-result { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
 #aoi-summary { color: var(--text); }
 
+.status-msg { display: none; font-size: 12px; padding: 7px 9px; border-radius: 6px; margin: 6px 0; line-height: 1.4; }
+.status-msg.show { display: block; }
+.status-msg.info { background: #16233d; color: #93c5fd; }
+.status-msg.error { background: #3f1d1d; color: #fca5a5; }
+.status-msg.success { background: #14291f; color: #86efac; }
+
+#imagery-scene-list { list-style: none; padding: 0; margin: 4px 0 0; max-height: 220px; overflow-y: auto; }
+#imagery-scene-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+#imagery-scene-list li:hover { background: #1f2937; }
+#imagery-scene-list li.selected { background: #16233d; border-color: var(--accent); }
+#imagery-scene-list .cloud { color: var(--muted); }
+
 #map { flex: 1; }

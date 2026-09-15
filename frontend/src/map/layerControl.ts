@@ -12,10 +12,15 @@ export class LayerManager {
   private active = new Map<string, L.Layer>();
   private details = new Map<string, LayerDetail>();
   /** ISO date (YYYY-MM-DD) currently applied to live STAC raster layers, or
-   * null for "most recent". Set via setDate() from the sidebar's date
-   * picker; toggle() and refreshActiveRasterLayers() both read this so any
+   * null for "most recent". Superseded by currentItemId when that's set.
+   * toggle() and refreshActiveRasterLayers() both read this so any
    * newly-activated or re-activated raster layer honors it. */
   private currentDate: string | null = null;
+  /** A specific STAC item id the user picked from the imagery
+   * search-and-select panel (see setItemId) — takes priority over
+   * currentDate, pinning live raster layers to this exact scene rather than
+   * auto-picking the least-cloudy one. */
+  private currentItemId: string | null = null;
   onLegendChange: (detail: LayerDetail | null) => void = () => {};
 
   constructor(map: L.Map) {
@@ -34,8 +39,16 @@ export class LayerManager {
     return this.currentDate;
   }
 
+  setItemId(itemId: string | null): void {
+    this.currentItemId = itemId;
+  }
+
+  getItemId(): string | null {
+    return this.currentItemId;
+  }
+
   private async activate(layerId: string): Promise<void> {
-    const detail = await api.getLayer(layerId, this.currentDate);
+    const detail = await api.getLayer(layerId, { date: this.currentDate, itemId: this.currentItemId });
     this.details.set(layerId, detail);
 
     let leafletLayer: L.Layer;
