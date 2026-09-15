@@ -306,6 +306,21 @@ def stac_item_json_url(request_base_url: str, collection: str, item_id: str) -> 
     return f"{request_base_url}api/v1/imagery/item/{collection}/{item_id}.json"
 
 
+# TiTiler's POST /statistics (feature/featureCollection body) uses
+# PartFeatureParams for its image-read size, whose `max_size` defaults to
+# None — i.e. "read the AOI at full native resolution" — unlike the GET
+# /statistics endpoint, which defaults max_size to 1024px. For a
+# state/LGA-sized AOI against 10m Sentinel-2 data that means tens of
+# millions of uncompressed pixels across multiple bands, which is enough by
+# itself to OOM a memory-constrained TiTiler instance (visible as TiTiler's
+# gunicorn worker getting SIGKILL'd and restarting — requests that land
+# during that restart fail/reset, which is what shows up client-side as
+# intermittent connection failures). Always pass max_size explicitly so a
+# large AOI degrades to a coarser statistical sample instead of taking the
+# whole service down.
+STATISTICS_MAX_SIZE = 1024
+
+
 def stac_statistics_url(
     item_json_url: str, assets: list[str], expression: str | None = None, nodata: float | None = None
 ) -> tuple[str, list[tuple[str, str]]]:
@@ -329,6 +344,9 @@ def stac_statistics_url(
     readings — they get counted as "valid" and run through the expression
     like everything else, producing a uniform, wrong result (e.g. LST's
     formula turns raw 0 into a bogus ~-124°C) rather than being excluded.
+
+    See STATISTICS_MAX_SIZE's comment above for why `max_size` is always
+    passed explicitly here.
     """
     params: list[tuple[str, str]] = [("url", item_json_url)]
     for asset in assets:
@@ -337,13 +355,18 @@ def stac_statistics_url(
         params.append(("expression", expression))
     if nodata is not None:
         params.append(("nodata", str(nodata)))
+    params.append(("max_size", str(STATISTICS_MAX_SIZE)))
     return f"{settings.titiler_base_url}/stac/statistics", params
 
 
 def cog_statistics_url(raster_url: str) -> tuple[str, list[tuple[str, str]]]:
     """Same as stac_statistics_url, for a layer with a stored/static COG
-    (layer.raster_url) rather than a live STAC recipe."""
-    return f"{settings.titiler_base_url}/cog/statistics", [("url", raster_url)]
+    (layer.raster_url) rather than a live STAC recipe. See
+    STATISTICS_MAX_SIZE's comment above for why `max_size` is passed."""
+    return f"{settings.titiler_base_url}/cog/statistics", [
+        ("url", raster_url),
+        ("max_size", str(STATISTICS_MAX_SIZE)),
+    ]
 
 
 def stac_tile_url(
