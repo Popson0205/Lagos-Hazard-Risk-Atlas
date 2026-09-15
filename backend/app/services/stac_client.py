@@ -256,7 +256,11 @@ def stac_item_json_url(request_base_url: str, collection: str, item_id: str) -> 
 
 
 def stac_statistics_url(
-    item_json_url: str, assets: list[str], expression: str | None = None, nodata: float | None = None
+    item_json_url: str,
+    assets: list[str],
+    expression: str | None = None,
+    nodata: float | None = None,
+    max_size: int | None = None,
 ) -> tuple[str, list[tuple[str, str]]]:
     """URL + query params for TiTiler's POST /stac/statistics — same asset
     URL as stac_tile_url above, but for zonal stats over an AOI instead of a
@@ -278,6 +282,14 @@ def stac_statistics_url(
     readings — they get counted as "valid" and run through the expression
     like everything else, producing a uniform, wrong result (e.g. LST's
     formula turns raw 0 into a bogus ~-124°C) rather than being excluded.
+
+    `max_size` caps the resolution statistics are actually computed at —
+    without it, a State/large-LGA AOI at Sentinel-2's native 10m means
+    reading and holding a much bigger array than TiTiler's free-tier
+    instance comfortably can, which is what's been behind large-area
+    analysis requests timing out. Downsampling first keeps the same valid
+    min/max/mean statistics (they're computed over resampled pixels, not
+    literally every native pixel) while using a fraction of the memory/time.
     """
     params: list[tuple[str, str]] = [("url", item_json_url)]
     for asset in assets:
@@ -286,13 +298,40 @@ def stac_statistics_url(
         params.append(("expression", expression))
     if nodata is not None:
         params.append(("nodata", str(nodata)))
+    if max_size is not None:
+        params.append(("max_size", str(max_size)))
     return f"{settings.titiler_base_url}/stac/statistics", params
 
 
-def cog_statistics_url(raster_url: str) -> tuple[str, list[tuple[str, str]]]:
+def cog_statistics_url(raster_url: str, max_size: int | None = None) -> tuple[str, list[tuple[str, str]]]:
     """Same as stac_statistics_url, for a layer with a stored/static COG
     (layer.raster_url) rather than a live STAC recipe."""
-    return f"{settings.titiler_base_url}/cog/statistics", [("url", raster_url)]
+    params: list[tuple[str, str]] = [("url", raster_url)]
+    if max_size is not None:
+        params.append(("max_size", str(max_size)))
+    return f"{settings.titiler_base_url}/cog/statistics", params
+
+
+def stac_point_url(
+    item_json_url: str, assets: list[str], expression: str | None = None, nodata: float | None = None
+) -> tuple[str, list[tuple[str, str]]]:
+    """URL + query params for TiTiler's GET /stac/point/{lon},{lat} — a
+    single-pixel value lookup, i.e. the raster equivalent of the vector
+    identify click (routers/features.py). Same expression/nodata handling
+    as stac_statistics_url above."""
+    params: list[tuple[str, str]] = [("url", item_json_url)]
+    for asset in assets:
+        params.append(("assets", asset))
+    if expression:
+        params.append(("expression", expression))
+    if nodata is not None:
+        params.append(("nodata", str(nodata)))
+    return f"{settings.titiler_base_url}/stac/point", params
+
+
+def cog_point_url(raster_url: str) -> tuple[str, list[tuple[str, str]]]:
+    """Same as stac_point_url, for a layer with a stored/static COG."""
+    return f"{settings.titiler_base_url}/cog/point", [("url", raster_url)]
 
 
 def stac_tile_url(

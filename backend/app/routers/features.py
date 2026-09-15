@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import HazardFeature, Layer
+from app.services import stac_client
 
 router = APIRouter(prefix="/layers", tags=["layers"])
 
@@ -42,25 +44,28 @@ def get_features(
 @router.get("/{layer_id}/identify")
 def identify(
     layer_id: str,
+    request: Request,
     lon: float = Query(...),
     lat: float = Query(...),
+    scene_id: str | None = Query(
+        default=None,
+        description="Same scene pin as GET /layers/{id}?scene_id= — identify should read "
+        "whatever scene is actually on screen, not silently re-pick 'most recent'.",
+    ),
     db: Session = Depends(get_db),
 ):
     """Hazard value / feature identify for a clicked point.
 
-    For vector layers: ST_Contains lookup against hazard_features.
-    For raster layers: proxy to TiTiler's /cog/point endpoint using the
-    layer's raster_url (left as a follow-up call from the frontend directly
-    to titiler_point_url, or implement here once a specific raster is wired
-    up — the plumbing (layer -> raster_url) already exists in layers.py).
+    Vector layers: ST_Contains lookup against hazard_features.
+    Raster layers: proxied to TiTiler's GET /stac/point or /cog/point (a
+    single-pixel value lookup) — mirrors exactly the same scene-resolution
+    and expression/nodata handling as the tile and statistics endpoints.
     """
     layer = db.get(Layer, layer_id)
     if not layer:
         raise HTTPException(status_code=404, detail="Layer not found")
 
     if layer.layer_type == "vector":
-        from sqlalchemy import func
-
         stmt = select(HazardFeature).where(
             HazardFeature.layer_id == layer_id,
             func.ST_Contains(HazardFeature.geom, func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)),
@@ -70,7 +75,70 @@ def identify(
             return {"layer_id": layer_id, "value": None, "properties": None}
         return {"layer_id": layer_id, "value": None, "properties": row.properties}
 
-    raise HTTPException(
-        status_code=501,
-        detail="Raster identify not yet wired — proxy to TiTiler /cog/point using layer.raster_url",
-    )
+    style = layer.style or {}
+    stac_recipe = style.get("stac")
+
+    if style.get("xyz_url") and not stac_recipe and not layer.raster_url:
+        raise HTTPException(
+            status_code=422,
+            detail="This layer is served as pre-rendered reference tiles (e.g. JRC Global "
+            "Surface Water), not raw pixel data, so there's no value to identify — it's a "
+            "visual reference layer only.",
+        )
+
+    if stac_recipe:
+        try:
+            if scene_id:
+                item = stac_client.get_item_by_id(stac_recipe["collection"], scene_id)
+            else:
+                item, _relaxed = stac_client.find_best_scene_with_fallback(
+                    collection=stac_recipe["collection"],
+                    bbox=stac_recipe.get("bbox"),
+                    lookback_days=stac_recipe.get("lookback_days", 90),
+                    max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
+                )
+        except stac_client.NoScenesFoundError as exc:
+            raise HTTPException(status_code=404 if scene_id else 503, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
+            ) from exc
+
+        item_json_url = stac_client.stac_item_json_url(
+            str(request.base_url), stac_recipe["collection"], item.id
+        )
+        url, params = stac_client.stac_point_url(
+            item_json_url,
+            assets=stac_recipe["assets"],
+            expression=stac_recipe.get("expression"),
+            nodata=stac_recipe.get("nodata"),
+        )
+    elif layer.raster_url:
+        url, params = stac_client.cog_point_url(layer.raster_url)
+    else:
+        raise HTTPException(
+            status_code=501,
+            detail="This raster layer has neither a live STAC recipe nor a stored raster_url "
+            "configured, so there's no imagery to identify a value from.",
+        )
+
+    lon_lat_path = f"{lon},{lat}"
+    try:
+        resp = httpx.get(f"{url}/{lon_lat_path}", params=params, timeout=30)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        # TiTiler returns 404 when the point falls outside the raster's
+        # actual footprint — a real "nothing there", not a server error.
+        if exc.response.status_code == 404:
+            return {"layer_id": layer_id, "value": None, "properties": None}
+        raise HTTPException(
+            status_code=502,
+            detail=f"TiTiler point lookup failed ({exc.response.status_code}): {exc.response.text[:300]}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach TiTiler: {exc}") from exc
+
+    data = resp.json()
+    values = data.get("values") or []
+    value = values[0] if values else None
+    return {"layer_id": layer_id, "value": value, "properties": None}

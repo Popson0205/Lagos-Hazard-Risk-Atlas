@@ -129,10 +129,11 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
             assets=stac_recipe["assets"],
             expression=stac_recipe.get("expression"),
             nodata=stac_recipe.get("nodata"),
+            max_size=512,
         )
         observed_at = str(item.datetime) if item.datetime else None
     elif layer.raster_url:
-        url, params = stac_client.cog_statistics_url(layer.raster_url)
+        url, params = stac_client.cog_statistics_url(layer.raster_url, max_size=512)
         observed_at = None
         relaxed_search = False
     else:

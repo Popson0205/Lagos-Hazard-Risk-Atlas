@@ -58,10 +58,13 @@ export const api = {
     return getJSON<GeoJSON.FeatureCollection>(`${BASE}/layers/${layerId}/features${qs}`);
   },
 
-  identify: (layerId: string, lon: number, lat: number) =>
-    getJSON<{ layer_id: string; value: unknown; properties: Record<string, unknown> | null }>(
-      `${BASE}/layers/${layerId}/identify?lon=${lon}&lat=${lat}`
-    ),
+  identify: (layerId: string, lon: number, lat: number, sceneId?: string | null) => {
+    const qs = new URLSearchParams({ lon: String(lon), lat: String(lat) });
+    if (sceneId) qs.set("scene_id", sceneId);
+    return getJSON<{ layer_id: string; value: unknown; properties: Record<string, unknown> | null }>(
+      `${BASE}/layers/${layerId}/identify?${qs.toString()}`
+    );
+  },
 
   search: (q: string) => getJSON<SearchResult[]>(`${BASE}/search?q=${encodeURIComponent(q)}`),
 
