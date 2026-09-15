@@ -62,6 +62,14 @@ def get_layer(
         "least-cloudy scene — for the manual imagery search-and-select panel. Takes "
         "priority over `date`.",
     ),
+    bbox: str | None = Query(
+        default=None,
+        description="AOI bbox 'min_lon,min_lat,max_lon,max_lat' to scope the "
+        "auto-picked scene search to, instead of searching all of Lagos state — "
+        "without this, the least-cloudy statewide scene can be a granule that "
+        "doesn't geographically cover the area actually being viewed/analyzed. "
+        "Ignored if item_id is given (a pinned scene search doesn't apply).",
+    ),
     db: Session = Depends(get_db),
 ):
     """Layer metadata + style configuration, plus the resolved URL the
@@ -74,6 +82,16 @@ def get_layer(
         raise HTTPException(status_code=404, detail="Layer not found")
 
     anchor_date = _parse_anchor_date(date)
+    aoi_bbox: list[float] | None = None
+    if bbox:
+        try:
+            aoi_bbox = [float(v) for v in bbox.split(",")]
+            if len(aoi_bbox) != 4:
+                raise ValueError
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="bbox must be 'min_lon,min_lat,max_lon,max_lat'"
+            ) from exc
 
     tile_url = None
     features_url = None
@@ -112,7 +130,7 @@ def get_layer(
                 try:
                     item, relaxed_search = stac_client.find_best_scene_with_fallback(
                         collection=stac_recipe["collection"],
-                        bbox=stac_recipe.get("bbox"),
+                        bbox=aoi_bbox or stac_recipe.get("bbox"),
                         lookback_days=stac_recipe.get("lookback_days", 90),
                         max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
                         anchor_date=anchor_date,

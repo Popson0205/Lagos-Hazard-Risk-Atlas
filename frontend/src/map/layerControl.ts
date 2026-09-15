@@ -71,7 +71,11 @@ export class LayerManager {
   }
 
   private async activate(layerId: string): Promise<void> {
-    const detail = await api.getLayer(layerId, { date: this.currentDate, itemId: this.currentItemId });
+    const detail = await api.getLayer(layerId, {
+      date: this.currentDate,
+      itemId: this.currentItemId,
+      bbox: this.aoiBbox,
+    });
     this.details.set(layerId, detail);
 
     let leafletLayer: L.Layer;

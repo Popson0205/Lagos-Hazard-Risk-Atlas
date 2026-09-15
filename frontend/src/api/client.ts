@@ -48,10 +48,14 @@ export const api = {
     return getJSON<Layer[]>(`${BASE}/layers${suffix}`);
   },
 
-  getLayer: (layerId: string, opts: { date?: string | null; itemId?: string | null } = {}) => {
+  getLayer: (layerId: string, opts: { date?: string | null; itemId?: string | null; bbox?: [number, number, number, number] | null } = {}) => {
     const qs = new URLSearchParams();
     if (opts.itemId) qs.set("item_id", opts.itemId);
     else if (opts.date) qs.set("date", opts.date);
+    // Scopes the auto-picked scene search to the AOI, so the least-cloudy
+    // scene found actually covers the area being viewed — ignored
+    // server-side if item_id is set (a pinned scene doesn't need this).
+    if (opts.bbox && !opts.itemId) qs.set("bbox", opts.bbox.join(","));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return getJSON<LayerDetail>(`${BASE}/layers/${layerId}${suffix}`);
   },

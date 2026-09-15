@@ -94,6 +94,12 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
     it, so we don't need our own rasterio/rasterstats code path."""
     style = layer.style or {}
     stac_recipe = style.get("stac")
+    # Scope the auto-picked scene search to the AOI itself, not all of
+    # Lagos state — otherwise "least cloudy scene over the whole state" can
+    # easily be a Sentinel-2 granule that doesn't geographically cover the
+    # selected area at all, and every pixel in the AOI comes back masked
+    # (100% nodata) even though the request "succeeds".
+    aoi_bbox = list(shape(body.geometry).bounds)
 
     if style.get("xyz_url") and not stac_recipe and not layer.raster_url:
         raise HTTPException(
@@ -131,7 +137,7 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
             try:
                 item, relaxed_search = stac_client.find_best_scene_with_fallback(
                     collection=stac_recipe["collection"],
-                    bbox=stac_recipe.get("bbox"),
+                    bbox=aoi_bbox,
                     lookback_days=stac_recipe.get("lookback_days", 90),
                     max_cloud_cover=stac_recipe.get("max_cloud_cover", 20),
                     anchor_date=anchor_date,
