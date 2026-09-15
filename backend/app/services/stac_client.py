@@ -324,4 +324,8 @@ def stac_tile_url(
     if nodata is not None:
         params.append(("nodata", str(nodata)))
     query = urlencode(params, safe="{}/:")
-    return f"{settings.titiler_base_url}/stac/tiles/{{z}}/{{x}}/{{y}}.png?{query}"
+    # WebMercatorQuad is the standard tile grid Leaflet itself uses — this
+    # {tileMatrixSetId} path segment is required by TiTiler's router; its
+    # absence (my earlier mistake) is exactly why every tile request 404'd
+    # while /stac/statistics (no TMS in its path at all) worked fine.
+    return f"{settings.titiler_base_url}/stac/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?{query}"
