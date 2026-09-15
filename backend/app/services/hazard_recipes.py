@@ -40,7 +40,14 @@ HAZARD_RECIPES: dict[str, dict] = {
         # temperature, stored as scaled digital numbers in Kelvin.
         # Official scale/offset (USGS LSDS-1619): DN * 0.00341802 + 149.0.
         "assets": ["lwir11"],
-        "expression": "lwir11*0.00341802+149.0-273.15",  # -> degrees Celsius
+        # rio-tiler's MultiBaseReader (used for STACReader/`/stac/tiles`)
+        # always renames merged asset bands positionally to b1, b2, ... in
+        # the order `assets` is given — it does NOT keep the literal asset
+        # name. b1 here == the single "lwir11" asset. See
+        # stac_client.stac_statistics_url's docstring for the full
+        # explanation (same reason B03/B08/B04 below are b1/b2, not the
+        # literal band names).
+        "expression": "b1*0.00341802+149.0-273.15",  # -> degrees Celsius
         "rescale": "20,45",
         "colormap_name": "inferno",
         "max_cloud_cover": 20,
@@ -53,7 +60,9 @@ HAZARD_RECIPES: dict[str, dict] = {
         # current flood/inundation extent, not a forecast or return-period
         # flood risk map.
         "assets": ["B03", "B08"],
-        "expression": "(B03-B08)/(B03+B08)",
+        # b1 = B03 (Green), b2 = B08 (NIR) — positional, not literal asset
+        # names (see extreme_heat's comment above).
+        "expression": "(b1-b2)/(b1+b2)",
         "rescale": "-1,1",
         "colormap_name": "rdbu",
         "max_cloud_cover": 20,
@@ -64,7 +73,9 @@ HAZARD_RECIPES: dict[str, dict] = {
         # NDVI: (NIR - Red) / (NIR + Red) — vegetation vigor/greenness, a
         # standard drought/water-stress proxy at this resolution.
         "assets": ["B08", "B04"],
-        "expression": "(B08-B04)/(B08+B04)",
+        # b1 = B08 (NIR), b2 = B04 (Red) — positional, not literal asset
+        # names (see extreme_heat's comment above).
+        "expression": "(b1-b2)/(b1+b2)",
         "rescale": "-1,1",
         "colormap_name": "rdylgn",
         "max_cloud_cover": 20,

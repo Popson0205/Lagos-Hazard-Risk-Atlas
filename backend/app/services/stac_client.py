@@ -89,7 +89,7 @@ def search_scenes(
 
 def titiler_tile_url(cog_url: str, colormap_name: str | None = None, rescale: str | None = None) -> str:
     """Build a TiTiler tile URL template for a given (already-signed) COG URL."""
-    base = f"{settings.titiler_base_url}/cog/tiles/{{z}}/{{x}}/{{y}}.png?url={cog_url}"
+    base = f"{settings.titiler_base_url}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={cog_url}"
     if colormap_name:
         base += f"&colormap_name={colormap_name}"
     if rescale:
