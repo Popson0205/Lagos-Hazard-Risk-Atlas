@@ -3,7 +3,7 @@
 Modular, self-hosted WebGIS for nine climate-risk hazard themes across Lagos State.
 
 Stack: Leaflet + TypeScript (frontend) · FastAPI (backend) · PostgreSQL/PostGIS (Supabase or self-hosted)
-· COG + TiTiler (raster delivery) · Microsoft Planetary Computer STAC (open satellite imagery source)
+· COG + TiTiler (raster delivery) · Earth Search STAC (AWS Open Data, open satellite imagery source)
 · Docker Compose (deployment)
 
 ## Repo layout
@@ -75,9 +75,9 @@ Scaffolded now (this drop):
 - FastAPI app skeleton matching the API structure in the architecture doc (`/api/v1/hazards`, `/layers`,
   `/layers/{id}`, `/layers/{id}/features`, `/layers/{id}/identify`, `/scenarios`, `/search`, `/analysis`, `/health`)
 - SQLAlchemy + GeoAlchemy2 models for the layer catalogue, hazard themes, scenarios
-- A Planetary Computer STAC client (`app/services/stac_client.py`) that searches collections, signs asset
-  URLs, and can hand a COG URL straight to TiTiler — no imagery is downloaded/stored unless you choose to
-  cache it
+- An Earth Search STAC client (`app/services/stac_client.py`) that searches collections and hands a
+  COG URL straight to TiTiler — no signing needed (public S3), no imagery downloaded/stored unless you
+  choose to cache it
 - Leaflet + TS frontend shell: hazard selector, layer control, legend, identify-on-click, scenario/date
   selector, wired to the backend API client
 - `docker-compose.yml` with postgis (PostGIS-enabled Postgres), titiler, backend, frontend, nginx
@@ -86,8 +86,8 @@ Scaffolded now (this drop):
 
 Deliberately left for you to fill in (data/domain-specific, not architecture):
 - The actual hazard raster/vector datasets per theme (flood depth grids, subsidence velocity, etc.) —
-  the STAC client gives you the *pipeline* to pull candidate imagery (Sentinel-2, Sentinel-1, DEM, land
-  cover) from Planetary Computer; the hazard *models* (flood extent from DEM+rainfall, LST from thermal
+  the STAC client gives you the *pipeline* to pull candidate imagery (Sentinel-2, Landsat, DEM, land
+  cover) from Earth Search; the hazard *models* (flood extent from DEM+rainfall, LST from thermal
   bands, etc.) are your GIS analysis work.
 - Alembic migration files (I've set up the config; run `alembic revision --autogenerate` once your models
   are final).
@@ -155,9 +155,14 @@ the first tile request after a gap will be slow while it wakes back up.
 `docker-compose.yml` for local dev (hot reload, separate containers) — they're not part of
 this combined-service path.
 
-## Imagery source (Planetary Computer)
+## Imagery source (Earth Search)
 
-No API key required for search or signed reads. `stac_client.py` uses `pystac-client` against
-`https://planetarycomputer.microsoft.com/api/stac/v1` and `planetary-computer`'s `sign()` helper to get
-short-lived, authenticated URLs for each asset — those signed URLs are what you hand to TiTiler
-(`/cog/tiles/...?url=<signed_url>`), so nothing needs to be re-hosted for a first pass.
+No API key or signing required. `stac_client.py` uses `pystac-client` against
+`https://earth-search.aws.element84.com/v1` (AWS Open Data, run by Element 84) — Earth Search's COGs are
+already public S3 URLs, so the item's asset hrefs go straight to TiTiler (`/stac/tiles/...?url=<item_json_url>`)
+with no signing step at all. This project previously used Microsoft's Planetary Computer, which needs every
+asset URL signed with a short-lived SAS token; switched after a transient TLS error there, and because not
+needing to sign removes a whole class of possible failure. Same collection ids (`landsat-c2-l2`,
+`sentinel-2-l2a`) either way, but the two providers name Sentinel-2's bands differently — Earth Search uses
+common names (`"green"`, `"nir"`, `"red"`), not Planetary Computer's band codes (`"B03"`, `"B08"`, `"B04"`) —
+worth knowing if you ever add another Sentinel-2-based recipe.

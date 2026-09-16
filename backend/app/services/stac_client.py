@@ -1,19 +1,29 @@
 """
-Planetary Computer STAC integration.
+Open satellite imagery via STAC.
 
 This is the pipeline referenced in the architecture doc's data-sources layer:
-it searches Microsoft's open STAC catalogue for candidate imagery (Sentinel-2
-L2A, Sentinel-1 RTC, Copernicus DEM, ESA WorldCover, etc.) over the Lagos
-State AOI, and signs the resulting asset URLs so they can be handed straight
-to TiTiler for on-the-fly COG tiling — no need to download/store imagery for
-a first pass.
+it searches Earth Search's open STAC catalogue (AWS Open Data, run by
+Element 84 — https://earth-search.aws.element84.com/v1) for candidate
+imagery (Sentinel-2 L2A, Landsat Collection 2, Copernicus DEM, etc.) over the
+Lagos State AOI, and hands the resulting (already-public, no signing needed)
+asset URLs straight to TiTiler for on-the-fly COG tiling — no need to
+download/store imagery for a first pass.
+
+Previously used Microsoft's Planetary Computer, which needs every asset URL
+signed with a short-lived SAS token; switched to Earth Search after a
+transient TLS certificate error there, and because Earth Search's public
+S3-hosted COGs need no signing at all — one less thing to go wrong. Same
+collection ids (landsat-c2-l2, sentinel-2-l2a) but Sentinel-2 asset names
+differ between the two (Earth Search uses common names — "green", "nir",
+"red" — not Planetary Computer's "B03"/"B08"/"B04"); see
+data/catalogue/hazard_layers.json for the recipes that depend on this.
 
 Typical hazard <-> collection mapping (adjust as your methodology firms up):
-  - Extreme heat / UHI        -> landsat-c2-l2 (thermal bands) or sentinel-3-slstr-lst
-  - Coastal/riverine flooding -> sentinel-1-rtc (SAR, flood extent), cop-dem-glo-30 (elevation)
-  - Land subsidence           -> sentinel-1-rtc (InSAR-ready) time series
+  - Extreme heat / UHI        -> landsat-c2-l2 (thermal bands)
+  - Coastal/riverine flooding -> sentinel-2-l2a (NDWI), cop-dem-glo-30 (elevation)
+  - Land subsidence           -> sentinel-1-grd time series
   - Coastal erosion           -> sentinel-2-l2a time series (shoreline change)
-  - Drought / water stress    -> sentinel-2-l2a (NDWI/NDVI), esa-worldcover
+  - Drought / water stress    -> sentinel-2-l2a (NDWI/NDVI)
   - Landslides                -> cop-dem-glo-30 (slope), sentinel-2-l2a (land cover)
 """
 from __future__ import annotations
@@ -21,7 +31,6 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
 
-import planetary_computer
 from pystac_client import Client
 
 from app.config import get_settings
@@ -37,10 +46,9 @@ LAGOS_BBOX: list[float] = [2.7, 6.35, 4.3, 6.7]
 def get_catalog() -> Client:
     global _catalog
     if _catalog is None:
-        _catalog = Client.open(
-            settings.stac_api_url,
-            modifier=planetary_computer.sign_inplace,
-        )
+        # No `modifier` needed — Earth Search's assets are public S3 COGs,
+        # unlike Planetary Computer's short-lived SAS-token-signed URLs.
+        _catalog = Client.open(settings.stac_api_url)
     return _catalog
 
 
@@ -75,13 +83,12 @@ def search_scenes(
 
     results = []
     for item in search.items():
-        signed = planetary_computer.sign(item)
         results.append(
             {
-                "id": signed.id,
-                "datetime": str(signed.datetime),
-                "cloud_cover": signed.properties.get("eo:cloud_cover"),
-                "assets": {k: a.href for k, a in signed.assets.items()},
+                "id": item.id,
+                "datetime": str(item.datetime),
+                "cloud_cover": item.properties.get("eo:cloud_cover"),
+                "assets": {k: a.href for k, a in item.assets.items()},
             }
         )
     return results
@@ -138,9 +145,10 @@ def item_to_dict(item) -> dict:
 
 
 def get_signed_asset_url(collection: str, item_id: str, asset: str) -> str:
-    """A freshly-signed href for one asset of one item — assets are signed
-    just-in-time here (rather than cached) because Planetary Computer SAS
-    tokens are short-lived."""
+    """An asset's href — Earth Search's are already public S3 URLs, no
+    signing needed (unlike Planetary Computer's short-lived SAS tokens,
+    which is why this used to be a just-in-time signing step; name kept for
+    compatibility with callers)."""
     item = get_item_by_id(collection, item_id)
     if asset not in item.assets:
         raise KeyError(
@@ -155,9 +163,7 @@ class NoScenesFoundError(RuntimeError):
 
 
 def get_item_by_id(collection: str, item_id: str):
-    """Fetch one STAC item by id, fully signed (the catalog is opened with
-    ``modifier=planetary_computer.sign_inplace``, which pystac-client applies
-    to every response — search results and direct item fetches alike)."""
+    """Fetch one STAC item by id."""
     catalog = get_catalog()
     item = catalog.get_collection(collection).get_item(item_id)
     if item is None:

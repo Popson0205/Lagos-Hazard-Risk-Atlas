@@ -51,7 +51,7 @@ services:
       - key: CORS_ORIGINS
         value: "*" # same-origin deploy — frontend and API share this service's URL, so CORS mostly doesn't matter here
       - key: STAC_API_URL
-        value: https://planetarycomputer.microsoft.com/api/stac/v1
+        value: https://earth-search.aws.element84.com/v1
       - key: TITILER_BASE_URL
         sync: false # set manually once the titiler service below has deployed, e.g.
         # https://lagos-risk-atlas-titiler.onrender.com  (no trailing slash)

@@ -7,7 +7,13 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://risk_atlas:risk_atlas@localhost:5432/risk_atlas"
     titiler_base_url: str = "http://localhost:8001"
-    stac_api_url: str = "https://planetarycomputer.microsoft.com/api/stac/v1"
+    # Earth Search (AWS Open Data, run by Element 84) — a fully open STAC
+    # API with no signing/API key needed (public S3-hosted COGs), unlike
+    # Planetary Computer's short-lived SAS-token signing. Switched from
+    # Planetary Computer after a transient TLS certificate error there;
+    # same collection ids (landsat-c2-l2, sentinel-2-l2a) but Sentinel-2's
+    # asset names differ — see data/catalogue/hazard_layers.json.
+    stac_api_url: str = "https://earth-search.aws.element84.com/v1"
     storage_backend: str = "local"
     storage_local_path: str = "/data/cogs"
     cors_origins: str = "http://localhost:5173"
