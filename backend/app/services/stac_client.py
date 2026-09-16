@@ -107,8 +107,16 @@ def search_scenes(
 
 
 def titiler_tile_url(cog_url: str, colormap_name: str | None = None, rescale: str | None = None) -> str:
-    """Build a TiTiler tile URL template for a given (already-signed) COG URL."""
-    base = f"{settings.titiler_base_url}/cog/tiles/{{z}}/{{x}}/{{y}}.png?url={cog_url}"
+    """Build a TiTiler tile URL template for a given (already-signed) COG URL.
+
+    WebMercatorQuad is the standard tile grid Leaflet itself uses — this
+    {tileMatrixSetId} path segment is required by TiTiler's router (as of
+    v0.19, the old default-less `/cog/tiles/{z}/{x}/{y}` route was removed
+    entirely). Its absence here is exactly why every raster_url-backed
+    layer's tiles 404'd while the layer metadata request itself worked
+    fine — the same bug already fixed for stac_tile_url below, just never
+    applied to this sibling function for stored COGs."""
+    base = f"{settings.titiler_base_url}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={cog_url}"
     if colormap_name:
         base += f"&colormap_name={colormap_name}"
     if rescale:
