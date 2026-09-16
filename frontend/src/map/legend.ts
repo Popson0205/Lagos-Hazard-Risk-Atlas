@@ -11,6 +11,7 @@ const COLORMAP_GRADIENTS: Record<string, string[]> = {
   rdbu: ["#67001f", "#d6604d", "#f7f7f7", "#4393c3", "#053061"],
   rdylgn: ["#a50026", "#f46d43", "#ffffbf", "#a6d96a", "#006837"],
   coolwarm: ["#3b4cc0", "#93b5fe", "#f7f7f7", "#f6a385", "#b40426"],
+  terrain: ["#333399", "#00994d", "#b3d96b", "#e6c35c", "#a0522d", "#ffffff"],
   jet: ["#00007f", "#0000ff", "#00ffff", "#ffff00", "#ff0000", "#7f0000"],
   gray: ["#000000", "#ffffff"],
   greys: ["#000000", "#ffffff"],

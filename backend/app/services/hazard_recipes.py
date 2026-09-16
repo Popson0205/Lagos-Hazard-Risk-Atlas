@@ -17,15 +17,30 @@ behind the separate /api/v1/imagery/search endpoint.
 
 This is intentionally a *starting point*, not a finished set of validated
 hazard models:
-  - extreme_heat and coastal_flooding below use well-established, simple
-    band math (thermal band -> LST, NDWI -> water extent) and are safe to
-    treat as real first-pass layers.
-  - Everything else needs either a genuine hazard model (flood depth from
-    DEM + rainfall, InSAR time series for subsidence, slope + rainfall for
-    landslides) or the client's own data, per README.md's "what's next"
-    section — leave those hazard themes without an entry here until that
-    modeling work happens, rather than shipping a misleading raw-imagery
-    proxy as if it were a validated hazard product.
+  - extreme_heat, coastal_flooding and drought_water_stress below use
+    well-established, simple band math (thermal band -> LST, NDWI -> water
+    extent, NDVI -> vegetation stress) computed live from a single Sentinel/
+    Landsat scene that already covers Lagos — safe to treat as real
+    first-pass layers.
+  - riverine_flooding (JRC Global Surface Water "seasonality" tiles) and
+    coastal_erosion's second layer (JRC "change" tiles) are real multi-
+    decade satellite products too, but pre-rendered by JRC/Google, not a
+    STAC recipe at all — see data/catalogue/hazard_layers.json directly.
+  - landslides and pluvial_flooding are now backed by Copernicus DEM
+    (cop-dem-glo-30), but NOT as a live STAC recipe here: DEM items on
+    Earth Search are 1°x1° tiles, too small for a single scene to cover
+    Lagos the way Sentinel/Landsat do, so they're mosaicked offline once
+    by backend/scripts/build_dem_derived_layers.py and served as a plain
+    hosted COG (raster_url) instead — see that script and the catalogue
+    entries for landslides_lagos_dem_relief and
+    pluvial_flooding_relative_lowland_index.
+  - land_subsidence and compound_flooding still need either a genuine
+    hazard model (InSAR time series for subsidence; a real composite of
+    the other flood drivers for compound flooding) or the client's own
+    data, per README.md's "what's next" section — left without an entry
+    anywhere in the catalogue until that modeling work happens, rather
+    than shipping a misleading proxy as if it were a validated hazard
+    product.
 
 To add a theme: add a key here, then add a matching entry to
 data/catalogue/hazard_layers.json with "raster_url": null and

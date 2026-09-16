@@ -19,12 +19,24 @@ differ between the two (Earth Search uses common names — "green", "nir",
 data/catalogue/hazard_layers.json for the recipes that depend on this.
 
 Typical hazard <-> collection mapping (adjust as your methodology firms up):
-  - Extreme heat / UHI        -> landsat-c2-l2 (thermal bands)
-  - Coastal/riverine flooding -> sentinel-2-l2a (NDWI), cop-dem-glo-30 (elevation)
-  - Land subsidence           -> sentinel-1-grd time series
-  - Coastal erosion           -> sentinel-2-l2a time series (shoreline change)
-  - Drought / water stress    -> sentinel-2-l2a (NDWI/NDVI)
-  - Landslides                -> cop-dem-glo-30 (slope), sentinel-2-l2a (land cover)
+  - Extreme heat / UHI        -> landsat-c2-l2 (thermal bands) [live STAC recipe]
+  - Coastal flooding          -> sentinel-2-l2a (NDWI) [live STAC recipe]
+  - Riverine flooding         -> JRC Global Surface Water "seasonality" tiles
+                                 (pre-rendered, not STAC at all)
+  - Drought / water stress    -> sentinel-2-l2a (NDVI) [live STAC recipe]
+  - Coastal erosion           -> OSM coastline (vector) + JRC "change" tiles
+                                 (pre-rendered, not STAC at all)
+  - Landslides                -> cop-dem-glo-30 elevation, mosaicked OFFLINE
+                                 (backend/scripts/build_dem_derived_layers.py)
+                                 and served as a hosted COG — not a live STAC
+                                 recipe, since DEM items are 1°x1° tiles, too
+                                 small for one item to cover Lagos
+  - Pluvial flooding          -> same cop-dem-glo-30 mosaic, offline local-
+                                 relief derivative (same script)
+  - Land subsidence           -> sentinel-1-grd time series — not built yet,
+                                 needs a genuine InSAR pipeline
+  - Compound flooding         -> not built yet; by definition needs at least
+                                 two of the flooding themes above combined
 """
 from __future__ import annotations
 

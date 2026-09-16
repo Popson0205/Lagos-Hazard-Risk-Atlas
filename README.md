@@ -84,11 +84,36 @@ Scaffolded now (this drop):
 - A starter `data/catalogue/hazard_layers.json` — the metadata catalogue described in section 6 of the
   architecture doc. This is what both the `/layers` endpoint and the frontend hazard selector read from.
 
+## Hazard layer coverage (9 themes)
+
+Of the nine seeded hazard themes, five now have at least one published layer, with two more
+built and ready to publish as soon as their data is hosted:
+
+| Theme | Status |
+|---|---|
+| extreme_heat | ✅ published — live Landsat LST |
+| coastal_flooding | ✅ published — live Sentinel-2 NDWI |
+| drought_water_stress | ✅ published — live Sentinel-2 NDVI |
+| coastal_erosion | ✅ published — OSM coastline + JRC surface-water change |
+| riverine_flooding | ✅ published — JRC surface-water seasonality |
+| landslides | ⏳ built, not yet public — Copernicus DEM elevation, needs the offline mosaic hosted (see below) |
+| pluvial_flooding | ⏳ built, not yet public — DEM-derived low-lying-terrain proxy, same next step |
+| land_subsidence | ❌ not started — needs a real InSAR (Sentinel-1) time-series pipeline |
+| compound_flooding | ❌ not started — by definition needs ≥2 of the flooding themes combined first |
+
+**landslides** and **pluvial_flooding** are held back (`is_public = false`, `raster_url = null`)
+because, unlike the four "live" layers above, Copernicus DEM's STAC items are 1°x1° tiles — too
+small for one item to cover Lagos State the way a single Sentinel/Landsat scene does. Run
+`backend/scripts/build_dem_derived_layers.py` to mosaic the DEM tiles into two COGs offline, host
+them anywhere public over HTTPS, then set `raster_url` and flip `is_public` to `true` on those two
+rows in `data/catalogue/hazard_layers.json` / the `layers` table (the script prints the exact SQL).
+
 Deliberately left for you to fill in (data/domain-specific, not architecture):
-- The actual hazard raster/vector datasets per theme (flood depth grids, subsidence velocity, etc.) —
-  the STAC client gives you the *pipeline* to pull candidate imagery (Sentinel-2, Landsat, DEM, land
-  cover) from Earth Search; the hazard *models* (flood extent from DEM+rainfall, LST from thermal
-  bands, etc.) are your GIS analysis work.
+- **land_subsidence** and **compound_flooding** have no layer at all yet — subsidence needs a real
+  InSAR (Sentinel-1) time-series pipeline, and compound flooding needs a genuine composite of at
+  least two other flooding themes, not a single-source proxy.
+- The frontend doesn't yet say anything special when a theme has zero published layers (it just
+  shows an empty layer list) — a small UX fix, not started.
 - Alembic migration files (I've set up the config; run `alembic revision --autogenerate` once your models
   are final).
 - Auth/access control on the API Gateway layer (the doc's "access control" box) — currently open; add

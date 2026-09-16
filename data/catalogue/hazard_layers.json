@@ -129,5 +129,66 @@
       ]
     },
     "is_public": true
+  },
+  {
+    "id": "riverine_flooding_jrc_gsw_seasonality",
+    "hazard_theme_id": "riverine_flooding",
+    "scenario_id": "baseline",
+    "name": "Surface Water Seasonality, 2021 (JRC Global Surface Water)",
+    "layer_type": "raster",
+    "source": "EC Joint Research Centre / Google \u2014 Global Surface Water Explorer v1.4 (Pekel et al. 2016, Nature, doi:10.1038/nature20584). Attribution required: 'Source: EC JRC/Google'.",
+    "unit": null,
+    "resolution": "30m (Landsat, 2021 composite)",
+    "methodology": "Pre-rendered reference tiles from JRC's Global Surface Water 'seasonality' layer: for each pixel, how many months of the year (0\u201312) it was classified as water in 2021. Land that's water only part of the year \u2014 along the lagoon fringe and river channels \u2014 is a reasonable proxy for land regularly inundated by riverine/lagoon flooding, distinct from permanent open water shown elsewhere. This is real observed satellite data for a single reference year, not a return-period flood model. Served directly from Google Cloud Storage as pre-styled PNG tiles \u2014 not routed through TiTiler/STAC, and not stats-capable (the source is styled imagery, not raw pixel values), so 'Run analysis' on this layer returns an explanation rather than numbers. Tiles are undefined above zoom 13.",
+    "raster_url": null,
+    "style": {
+      "xyz_url": "https://storage.googleapis.com/global-surface-water/tiles2021/seasonality/{z}/{x}/{y}.png",
+      "max_native_zoom": 13,
+      "breaks": [
+        "Never water (0 months/yr)",
+        "Seasonal water (1\u201311 months/yr)",
+        "Permanent water (12 months/yr)"
+      ],
+      "colors": [
+        "#f0f9ff",
+        "#38bdf8",
+        "#0c4a6e"
+      ]
+    },
+    "is_public": true
+  },
+  {
+    "id": "landslides_lagos_dem_relief",
+    "hazard_theme_id": "landslides",
+    "scenario_id": "baseline",
+    "name": "Elevation / Terrain Relief (Copernicus DEM)",
+    "layer_type": "raster",
+    "source": "Copernicus DEM GLO-30 (ESA/Airbus, via Earth Search / AWS Open Data), mosaicked offline",
+    "unit": "m",
+    "resolution": "30m",
+    "methodology": "PENDING \u2014 not yet public. Elevation mosaic over Lagos State from Copernicus GLO-30 DEM, built offline by backend/scripts/build_dem_derived_layers.py rather than served live: the DEM's STAC items are individual 1\u00b0x1\u00b0 tiles (too small to cover Lagos State the way a single Sentinel/Landsat scene does), so several tiles are fetched once and mosaicked into one COG instead of a live per-tile TiTiler request. This shows raw elevation, not slope or a validated landslide-susceptibility model \u2014 but it's informative on its own: Lagos is an almost entirely flat coastal/lagoon plain (well under ~60m everywhere), which is exactly why landslide risk here is minimal. Run the script, host the resulting COG somewhere public, then set raster_url below and flip is_public to true.",
+    "raster_url": null,
+    "style": {
+      "colormap_name": "terrain",
+      "rescale": "0,60"
+    },
+    "is_public": false
+  },
+  {
+    "id": "pluvial_flooding_relative_lowland_index",
+    "hazard_theme_id": "pluvial_flooding",
+    "scenario_id": "baseline",
+    "name": "Relative Low-Lying Terrain Index (Pluvial Ponding Proxy)",
+    "layer_type": "raster",
+    "source": "Derived from Copernicus DEM GLO-30 (ESA/Airbus, via Earth Search / AWS Open Data), computed offline",
+    "unit": "m (relative to local surroundings)",
+    "resolution": "30m",
+    "methodology": "PENDING \u2014 not yet public. For every pixel, elevation minus the mean elevation within a ~1km moving window (backend/scripts/build_dem_derived_layers.py) \u2014 negative values sit lower than their immediate surroundings (a local basin/depression), the kind of poorly-draining terrain where rainfall tends to pond during flash/pluvial flooding, independent of distance to the coast or a river (which the coastal_flooding and riverine_flooding themes already cover). This is a first-pass topographic susceptibility proxy, not a hydrologically-correct HAND (height-above-nearest-drainage) or flow-routed model, and it says nothing about drainage infrastructure or actual rainfall \u2014 a genuine pluvial flood-depth model needs DEM + rainfall + drainage-network routing. Run the script, host the resulting COG somewhere public, then set raster_url below and flip is_public to true.",
+    "raster_url": null,
+    "style": {
+      "colormap_name": "coolwarm",
+      "rescale": "-5,5"
+    },
+    "is_public": false
   }
 ]
