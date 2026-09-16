@@ -1,0 +1,133 @@
+[
+  {
+    "id": "extreme_heat_lst_baseline",
+    "hazard_theme_id": "extreme_heat",
+    "scenario_id": "baseline",
+    "name": "Land Surface Temperature (Baseline)",
+    "layer_type": "raster",
+    "source": "Landsat Collection 2 Level-2 (via Earth Search / AWS Open Data)",
+    "unit": "C",
+    "resolution": "30m",
+    "methodology": "LST derived from Landsat thermal band, atmospherically corrected surface temperature product. Computed live per request from the least-cloudy Landsat scene over Lagos in the last 90 days (see backend/app/services/hazard_recipes.py) \u2014 not a fixed historical baseline.",
+    "raster_url": null,
+    "style": {
+      "colormap_name": "inferno",
+      "rescale": "20,45",
+      "stac": {
+        "collection": "landsat-c2-l2",
+        "assets": [
+          "lwir11"
+        ],
+        "expression": "b1*0.00341802+149.0-273.15",
+        "rescale": "20,45",
+        "colormap_name": "inferno",
+        "max_cloud_cover": 20,
+        "lookback_days": 90,
+        "nodata": 0
+      }
+    },
+    "is_public": true
+  },
+  {
+    "id": "coastal_flooding_water_extent_live",
+    "hazard_theme_id": "coastal_flooding",
+    "scenario_id": "baseline",
+    "name": "Current Water Extent (Live, NDWI)",
+    "layer_type": "raster",
+    "source": "Sentinel-2 L2A NDWI (via Earth Search / AWS Open Data)",
+    "unit": "NDWI",
+    "resolution": "10m",
+    "methodology": "NDWI = (Green - NIR) / (Green + NIR), computed live from the least-cloudy Sentinel-2 scene over Lagos in the last 60 days. This is a current inundation/water-extent proxy, not a flood-risk or return-period model \u2014 see backend/app/services/hazard_recipes.py.",
+    "raster_url": null,
+    "style": {
+      "colormap_name": "rdbu",
+      "rescale": "-1,1",
+      "stac": {
+        "collection": "sentinel-2-l2a",
+        "assets": [
+          "green",
+          "nir"
+        ],
+        "expression": "(b1-b2)/(b1+b2)",
+        "rescale": "-1,1",
+        "colormap_name": "rdbu",
+        "max_cloud_cover": 20,
+        "lookback_days": 60,
+        "nodata": 0
+      }
+    },
+    "is_public": true
+  },
+  {
+    "id": "drought_water_stress_ndvi_live",
+    "hazard_theme_id": "drought_water_stress",
+    "scenario_id": "baseline",
+    "name": "Vegetation Stress (Live, NDVI)",
+    "layer_type": "raster",
+    "source": "Sentinel-2 L2A NDVI (via Earth Search / AWS Open Data)",
+    "unit": "NDVI",
+    "resolution": "10m",
+    "methodology": "NDVI = (NIR - Red) / (NIR + Red), computed live from the least-cloudy Sentinel-2 scene over Lagos in the last 60 days \u2014 a standard vegetation-vigor proxy for drought/water stress, not a validated drought index.",
+    "raster_url": null,
+    "style": {
+      "colormap_name": "rdylgn",
+      "rescale": "-1,1",
+      "stac": {
+        "collection": "sentinel-2-l2a",
+        "assets": [
+          "nir",
+          "red"
+        ],
+        "expression": "(b1-b2)/(b1+b2)",
+        "rescale": "-1,1",
+        "colormap_name": "rdylgn",
+        "max_cloud_cover": 20,
+        "lookback_days": 60,
+        "nodata": 0
+      }
+    },
+    "is_public": true
+  },
+  {
+    "id": "coastal_erosion_osm_coastline",
+    "hazard_theme_id": "coastal_erosion",
+    "scenario_id": "baseline",
+    "name": "Coastline (OpenStreetMap, current)",
+    "layer_type": "vector",
+    "source": "OpenStreetMap contributors, via the Overpass API (ODbL \u2014 https://www.openstreetmap.org/copyright)",
+    "unit": null,
+    "resolution": null,
+    "methodology": "The current mapped coastline (natural=coastline ways) from OpenStreetMap \u2014 a real, community-mapped snapshot of shoreline position, not a computed erosion rate. On its own this shows where the coast is today; combine it with the JRC Global Surface Water Change layer below to see how it has actually moved. Ingested via backend/scripts/fetch_osm_coastline.py \u2014 re-run periodically to refresh, since OSM coastline edits happen continuously.",
+    "raster_url": null,
+    "style": {
+      "line_color": "#38bdf8",
+      "line_weight": 2
+    },
+    "is_public": true
+  },
+  {
+    "id": "coastal_erosion_jrc_gsw_change",
+    "hazard_theme_id": "coastal_erosion",
+    "scenario_id": "baseline",
+    "name": "Land/Water Change, 1984\u20132021 (JRC Global Surface Water)",
+    "layer_type": "raster",
+    "source": "EC Joint Research Centre / Google \u2014 Global Surface Water Explorer v1.4 (Pekel et al. 2016, Nature, doi:10.1038/nature20584). Attribution required: 'Source: EC JRC/Google'.",
+    "unit": null,
+    "resolution": "30m (Landsat, 1984\u20132021 composite)",
+    "methodology": "Pre-rendered reference tiles from JRC's Global Surface Water 'change' layer: blue = permanent water gain (land lost to the sea \u2014 an erosion signal), red = permanent water loss (land gained/reclaimed \u2014 an accretion signal), over the full 1984\u20132021 Landsat archive. This is a genuine multi-decade change product (unlike the single-scene 'live' layers elsewhere in this catalogue), served directly from Google Cloud Storage as pre-styled PNG tiles \u2014 not routed through TiTiler/STAC, and not stats-capable (the source is styled imagery, not raw pixel values), so 'Run analysis' on this layer returns an explanation rather than numbers. Tiles are undefined above zoom 13.",
+    "raster_url": null,
+    "style": {
+      "xyz_url": "https://storage.googleapis.com/global-surface-water/tiles2021/change/{z}/{x}/{y}.png",
+      "max_native_zoom": 13,
+      "breaks": [
+        "Water gain (erosion signal)",
+        "Water loss (accretion signal)"
+      ],
+      "colors": [
+        "#3b82f6",
+        "#dc2626"
+      ]
+    },
+    "is_public": true
+  }
+]
