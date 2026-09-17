@@ -90,12 +90,18 @@ export const api = {
 
   /** Browse real Planetary Computer scenes for a collection/date-range —
    * this is the FarmScan-style "search, then pick one" flow that replaced
-   * the old single-date-anchor picker. */
+   * the old single-date-anchor picker. Passing `bbox` (the current AOI's
+   * extent, when one is selected) narrows results to scenes that actually
+   * cover that area — see the note in main.ts on why this matters: Sentinel-2
+   * granules are much smaller than Lagos State, so an unfiltered search can
+   * return scenes from a neighbouring tile that don't cover the selected
+   * ward at all. */
   searchScenes: (params: {
     collection: string;
     startDate: string;
     endDate: string;
     maxCloudCover?: number;
+    bbox?: [number, number, number, number];
   }) => {
     const qs = new URLSearchParams({
       collection: params.collection,
@@ -103,6 +109,7 @@ export const api = {
       max_cloud_cover: String(params.maxCloudCover ?? 30),
       limit: "20",
     });
+    if (params.bbox) qs.set("bbox", params.bbox.join(","));
     return getJSON<STACItem[]>(`${BASE}/imagery/search?${qs.toString()}`);
   },
 };

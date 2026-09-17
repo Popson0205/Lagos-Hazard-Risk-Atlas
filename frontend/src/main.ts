@@ -1,6 +1,7 @@
 import "./style.css";
 import L from "leaflet";
 import { createMap } from "./map/mapInit";
+import { addNorthArrow, addScaleBar, addBasemapSwitcher } from "./map/mapControls";
 import { LayerManager } from "./map/layerControl";
 import { renderLegend } from "./map/legend";
 import { setupIdentify } from "./map/identify";
@@ -12,7 +13,10 @@ import type { HazardTheme, Scenario, Layer } from "./types";
 type Aoi = AoiSelection | DrawnAoi;
 
 async function main() {
-  const map = createMap("map");
+  const { map, basemaps } = createMap("map");
+  addNorthArrow(map);
+  addScaleBar(map);
+  addBasemapSwitcher(map, basemaps);
   const layers = new LayerManager(map);
   const boundaryManager = new BoundaryManager(map);
   const drawTool = new PolygonDrawTool(map);
@@ -243,7 +247,14 @@ async function main() {
     }
     const hasStats = mean !== undefined || (p2 !== undefined && p98 !== undefined) || (min !== undefined && max !== undefined);
     if (!hasStats) {
-      sentences.push(`No usable pixel values were returned for ${layerName} in this area.`);
+      sentences.push(
+        "No usable image data came back for this area in this particular scene. " +
+          "This usually isn't a fault — it happens when the satellite pass simply doesn't " +
+          "cover this exact spot (Sentinel-2/Landsat imagery is delivered in large tiles, and " +
+          "Lagos spans more than one of them), or when this date was overcast right over this " +
+          "area. Try picking a different date from the scene list — nearby dates often come from " +
+          "a different tile and cover it fully."
+      );
     }
 
     const statsHtml = `<p>${sentences.join(" ")}</p>`;
@@ -443,9 +454,11 @@ async function main() {
   });
 
   // --- Admin boundary cascade: State (Lagos, fixed) -> LGA -> Ward ---
-  boundaryManager.loadStateContext().catch((err) => {
-    console.error("Could not load the Lagos state outline:", err);
-  });
+  // Only the selected ward itself is drawn on the map — analysis only ever
+  // runs at ward level, so the state outline and per-LGA outline used to
+  // add visual clutter without being selectable/useful themselves. The LGA
+  // dropdown below still narrows the ward list; it just no longer draws
+  // anything on the map on its own.
 
   function resetWardOptions(placeholder: string, disabled: boolean): void {
     wardSelect.innerHTML = `<option value="">${placeholder}</option>`;
@@ -467,7 +480,6 @@ async function main() {
     clearAoi();
 
     if (!lgaCode) {
-      await boundaryManager.showLgaContext(null);
       resetWardOptions("Select an LGA first…", true);
       return;
     }
@@ -475,10 +487,7 @@ async function main() {
     lgaSelect.disabled = true;
     resetWardOptions("Loading wards…", true);
     try {
-      const [wards] = await Promise.all([
-        boundaryManager.listWards(lgaCode),
-        boundaryManager.showLgaContext(lgaCode),
-      ]);
+      const wards = await boundaryManager.listWards(lgaCode);
       wardSelect.innerHTML =
         `<option value="">Select ward…</option>` +
         wards.map((w) => `<option value="${w.code}">${w.name}</option>`).join("");
@@ -573,8 +582,17 @@ async function main() {
     searchScenesBtn.disabled = true;
     sceneSearchStatusEl.textContent = "Searching the satellite catalog...";
     sceneListEl.innerHTML = "";
+    // Constrain the search to the selected ward's extent when there is one —
+    // without this, results can come from any Sentinel-2/Landsat granule
+    // touching all of Lagos State (~170km wide), and granules are only
+    // ~110km square, so a scene can be returned that simply doesn't cover
+    // the ward at all. That's what was behind "some scenes give a real
+    // result, some give 0 sampled pixels" — it wasn't random, it depended on
+    // which tile that particular date's scene happened to come from.
+    const bbox = currentAoi ? (L.geoJSON(currentAoi.geometry).getBounds().toBBoxString().split(",").map(Number) as [number, number, number, number]) : undefined;
+
     try {
-      const scenes = await api.searchScenes({ collection, startDate: start, endDate: end, maxCloudCover });
+      const scenes = await api.searchScenes({ collection, startDate: start, endDate: end, maxCloudCover, bbox });
       if (scenes.length === 0) {
         sceneSearchStatusEl.textContent = "No scenes found for that range/cloud filter — try widening it.";
         return;
