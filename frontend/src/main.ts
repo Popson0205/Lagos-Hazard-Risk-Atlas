@@ -41,8 +41,164 @@ async function main() {
   const clearBtn = document.getElementById("aoi-clear-btn") as HTMLButtonElement;
   const runAnalysisBtn = document.getElementById("aoi-run-analysis-btn") as HTMLButtonElement;
 
+  const analysisModalOverlay = document.getElementById("analysis-modal-overlay") as HTMLDivElement;
+  const analysisModalBody = document.getElementById("analysis-modal-body") as HTMLDivElement;
+  const analysisModalClose = document.getElementById("analysis-modal-close") as HTMLButtonElement;
+
   layers.onLegendChange = (detail) => renderLegend(legendEl, detail);
   setupIdentify(map, layers, identifyResultEl);
+
+  // --- Analysis result popup (replaces dumping raw figures in the sidebar) ---
+  function openAnalysisModal(): void {
+    analysisModalOverlay.hidden = false;
+  }
+  function closeAnalysisModal(): void {
+    analysisModalOverlay.hidden = true;
+  }
+  analysisModalClose.addEventListener("click", closeAnalysisModal);
+  analysisModalOverlay.addEventListener("click", (e) => {
+    if (e.target === analysisModalOverlay) closeAnalysisModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !analysisModalOverlay.hidden) closeAnalysisModal();
+  });
+
+  /** Human-readable AOI label for the modal header — the ward/LGA/state name
+   * the analysis actually ran against, or a note that it's a hand-drawn shape. */
+  function describeAoi(aoi: Aoi): { eyebrow: string; title: string } {
+    if (aoi.source === "drawn") {
+      return { eyebrow: "Custom area", title: "Hand-drawn polygon" };
+    }
+    const levelLabel = aoi.level === "lga" ? "LGA" : aoi.level.charAt(0).toUpperCase() + aoi.level.slice(1);
+    return { eyebrow: levelLabel, title: aoi.name };
+  }
+
+  /** Coarse, honest description of how much a raster value swings across the
+   * sampled area — deliberately doesn't claim a value is "good" or "bad"
+   * (that depends on the hazard), just how spread out it is. */
+  function describeVariability(min: number, max: number, mean: number): string {
+    const range = max - min;
+    if (!isFinite(range) || range <= 0) return "essentially uniform across this area";
+    const reference = Math.abs(mean) > 1e-6 ? Math.abs(mean) : range;
+    const relativeSpread = range / reference;
+    if (relativeSpread < 0.15) return "fairly uniform across this area";
+    if (relativeSpread < 0.6) return "moderately variable across this area";
+    return "highly variable across this area, with some clear pockets that stand out from the rest";
+  }
+
+  function fmt(n: number | undefined): string {
+    if (n === undefined || n === null || Number.isNaN(n)) return "—";
+    return Number(n.toFixed(2)).toString();
+  }
+
+  /** Plain-language paragraph for a raster (zonal_stats) result. */
+  function buildRasterSummary(layerName: string, unit: string, values: Record<string, number>): string {
+    const unitSuffix = unit ? ` ${unit}` : "";
+    const { mean, median, min, max, percentile_2: p2, percentile_98: p98 } = values;
+    const sentences: string[] = [];
+
+    if (mean !== undefined) {
+      sentences.push(
+        `On average, <strong>${layerName}</strong> in this area is around <strong>${fmt(mean)}${unitSuffix}</strong>` +
+          (median !== undefined ? ` (the typical, or median, value is ${fmt(median)}${unitSuffix}).` : ".")
+      );
+    }
+    if (p2 !== undefined && p98 !== undefined) {
+      sentences.push(
+        `Most of the area (the middle 96% of sampled pixels) falls between <strong>${fmt(p2)}${unitSuffix}</strong> and <strong>${fmt(p98)}${unitSuffix}</strong>.`
+      );
+    }
+    if (min !== undefined && max !== undefined) {
+      const variability = describeVariability(min, max, mean ?? 0);
+      sentences.push(
+        `Individual spots range from as low as ${fmt(min)}${unitSuffix} to as high as ${fmt(max)}${unitSuffix} — overall, this area is ${variability}.`
+      );
+    }
+    if (!sentences.length) {
+      sentences.push(`No usable pixel values were returned for ${layerName} in this area.`);
+    }
+    return sentences.join(" ");
+  }
+
+  /** Plain-language paragraph for a vector (area_by_class) result. */
+  function buildVectorSummary(layerName: string, areaKm2: number, byClass: Record<string, number>): string {
+    const entries = Object.entries(byClass).sort((a, b) => b[1] - a[1]);
+    if (!entries.length) {
+      return `No mapped <strong>${layerName}</strong> features were found inside this area.`;
+    }
+    const total = entries.reduce((sum, [, v]) => sum + v, 0) || areaKm2;
+    const pct = (v: number) => (total > 0 ? Math.round((v / total) * 100) : 0);
+    const [topClass, topArea] = entries[0];
+    let text = `Within this area, mapped <strong>${layerName}</strong> hazard zones mostly fall under <strong>"${topClass}"</strong>, covering about ${pct(topArea)}% of the mapped extent (${fmt(topArea)} km²).`;
+    if (entries.length > 1) {
+      const rest = entries
+        .slice(1, 4)
+        .map(([cls, a]) => `"${cls}" (${pct(a)}%)`)
+        .join(", ");
+      text += ` The rest is split across ${rest}${entries.length > 4 ? ", and others" : ""}.`;
+    }
+    return text;
+  }
+
+  const FIGURE_UNIT_KEYS = new Set([
+    "min",
+    "max",
+    "mean",
+    "median",
+    "std",
+    "sum",
+    "majority",
+    "minority",
+    "percentile_2",
+    "percentile_98",
+  ]);
+
+  function formatFigureValue(key: string, value: number, unit: string): string {
+    if (key === "valid_percent") return `${fmt(value)}%`;
+    if (FIGURE_UNIT_KEYS.has(key) && unit) return `${fmt(value)} ${unit}`;
+    return fmt(value);
+  }
+
+  function renderAnalysisModal(params: {
+    aoi: Aoi;
+    layerName: string;
+    hazardName?: string;
+    unit: string;
+    summaryHtml: string;
+    figures: Record<string, number>;
+    figureAreaUnit?: string;
+    notes: string[];
+  }): void {
+    const { aoi, layerName, hazardName, unit, summaryHtml, figures, figureAreaUnit, notes } = params;
+    const aoiInfo = describeAoi(aoi);
+    const figureRows = Object.entries(figures)
+      .map(
+        ([k, v]) =>
+          `<div class="figure-label">${k.replace(/_/g, " ")}</div><div class="figure-value">${
+            figureAreaUnit ? `${fmt(v)} ${figureAreaUnit}` : formatFigureValue(k, v, unit)
+          }</div>`
+      )
+      .join("");
+
+    analysisModalBody.innerHTML = `
+      <p class="modal-eyebrow" id="analysis-modal-title">${aoiInfo.eyebrow}${hazardName ? ` · ${hazardName}` : ""}</p>
+      <h2 class="modal-title">${aoiInfo.title}</h2>
+      <p class="modal-subtitle">${layerName}</p>
+      <div class="modal-summary">${summaryHtml}</div>
+      ${
+        figureRows
+          ? `<div class="modal-figures">
+               <details>
+                 <summary>Detailed figures</summary>
+                 <div class="figures-grid">${figureRows}</div>
+               </details>
+             </div>`
+          : ""
+      }
+      ${notes.length ? `<p class="modal-note">${notes.join(" ")}</p>` : ""}
+    `;
+    openAnalysisModal();
+  }
 
   // --- Area of interest: pick a boundary, or draw a custom polygon ---
   let currentAoi: Aoi | null = null;
@@ -305,29 +461,61 @@ async function main() {
         operation,
         scene_id: layers.getSceneId() ?? undefined,
       });
-      const lines =
-        operation === "zonal_stats"
-          ? [`${result.feature_count} valid pixel(s) sampled in this area`, `Area: ${result.area_km2} km²`]
-          : [`${result.feature_count} feature(s) intersect this area`, `Total area: ${result.area_km2} km²`];
-      if (result.observed_at) {
-        lines.push(`Imagery date: ${result.observed_at.slice(0, 10)}`);
-      }
+
+      const layerName = activeDetail?.name ?? "this layer";
+      const unit = activeDetail?.unit ?? "";
+      const hazard = hazards.find((h) => h.id === activeDetail?.hazard_theme_id);
+
+      const notes: string[] = [];
+      if (result.observed_at) notes.push(`Imagery date: ${result.observed_at.slice(0, 10)}.`);
       if (result.relaxed_search) {
-        lines.push("(No cloud-free scene near the requested date — widened the search window.)");
+        notes.push("No cloud-free scene was available near the requested date, so the search window was widened.");
       }
-      if (result.by_class) {
-        lines.push("By class:");
-        for (const [cls, area] of Object.entries(result.by_class)) {
-          lines.push(`  ${cls}: ${area} km²`);
-        }
+
+      if (operation === "zonal_stats" && result.values) {
+        const summaryHtml =
+          buildRasterSummary(layerName, unit, result.values) +
+          ` <span style="color:var(--muted)">(based on ${result.feature_count} sampled pixel(s) over ${result.area_km2} km².)</span>`;
+        renderAnalysisModal({
+          aoi: currentAoi,
+          layerName,
+          hazardName: hazard?.name,
+          unit,
+          summaryHtml,
+          figures: result.values,
+          notes,
+        });
+      } else if (operation === "area_by_class" && result.by_class) {
+        const summaryHtml = buildVectorSummary(layerName, result.area_km2, result.by_class);
+        renderAnalysisModal({
+          aoi: currentAoi,
+          layerName,
+          hazardName: hazard?.name,
+          unit,
+          summaryHtml,
+          figures: result.by_class,
+          figureAreaUnit: "km²",
+          notes,
+        });
+      } else {
+        renderAnalysisModal({
+          aoi: currentAoi,
+          layerName,
+          hazardName: hazard?.name,
+          unit,
+          summaryHtml: `No pixel or feature values were returned for ${layerName} in this area.`,
+          figures: {},
+          notes,
+        });
       }
-      if (result.values) {
-        lines.push("Pixel value summary:");
-        for (const [stat, val] of Object.entries(result.values)) {
-          lines.push(`  ${stat}: ${val}`);
-        }
-      }
-      aoiResultEl.textContent = lines.join("\n");
+
+      aoiResultEl.innerHTML = "";
+      const viewBtn = document.createElement("button");
+      viewBtn.type = "button";
+      viewBtn.className = "link-btn";
+      viewBtn.textContent = "Analysis complete — view result again";
+      viewBtn.addEventListener("click", () => openAnalysisModal());
+      aoiResultEl.appendChild(viewBtn);
     } catch (err) {
       aoiResultEl.textContent = `Analysis unavailable: ${(err as Error).message}`;
     } finally {
