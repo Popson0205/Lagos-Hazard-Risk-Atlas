@@ -617,6 +617,13 @@ async function main() {
     const operation = activeDetail?.layer_type === "vector" ? "area_by_class" : "zonal_stats";
     runAnalysisBtn.disabled = true;
     aoiResultEl.textContent = "Running analysis...";
+    // Detach raster layers for the duration of the request, which aborts
+    // their in-flight tile loads. TiTiler serves requests one at a time,
+    // and selecting a ward zooms to z16 and rebuilds every raster layer to
+    // apply the AOI mask — so without this the statistics call queues
+    // behind dozens of tiles and times out, even though it completes in
+    // seconds against an idle tile server. See map/layerControl.ts.
+    const restoreTiles = layers.suspendRasterTiles();
     try {
       // Prefer the scene already resolved for the layer currently on the
       // map (activeDetail.scene_id) over re-resolving "most recent" from
@@ -694,6 +701,7 @@ async function main() {
     } catch (err) {
       aoiResultEl.textContent = `Analysis unavailable: ${(err as Error).message}`;
     } finally {
+      restoreTiles();
       runAnalysisBtn.disabled = false;
     }
   });

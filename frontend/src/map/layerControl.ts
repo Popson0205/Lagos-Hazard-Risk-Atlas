@@ -116,6 +116,38 @@ export class LayerManager {
     }
   }
 
+  /** Detach active raster layers from the map so their in-flight tile
+   * requests are abandoned, and return a function that puts them back.
+   *
+   * Why this exists: TiTiler runs a single worker, so it processes requests
+   * strictly one at a time. Selecting a ward zooms the map to z16 AND
+   * rebuilds every raster layer to apply the AOI mask, which fires a burst
+   * of tile requests. Clicking "Run analysis" right after that puts the
+   * statistics call at the back of a queue dozens of tiles long — which is
+   * exactly how it ends up as a 504, even though the same request succeeds
+   * in seconds when the queue is empty.
+   *
+   * Removing a Leaflet layer aborts its pending tile image loads, so this
+   * clears the queue and lets the statistics request go first. Tiles are
+   * re-requested on restore and mostly come from the browser cache. */
+  suspendRasterTiles(): () => void {
+    const suspended = [...this.active.entries()].filter(
+      ([id]) => this.details.get(id)?.layer_type === "raster"
+    );
+    for (const [, layer] of suspended) {
+      this.map.removeLayer(layer);
+    }
+    let restored = false;
+    return () => {
+      if (restored) return;
+      restored = true;
+      for (const [id, layer] of suspended) {
+        // Skip anything the user toggled off while the analysis was running.
+        if (this.active.get(id) === layer) layer.addTo(this.map);
+      }
+    };
+  }
+
   getActiveDetails(): LayerDetail[] {
     return [...this.details.values()];
   }

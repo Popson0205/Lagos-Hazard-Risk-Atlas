@@ -50,8 +50,20 @@ def run():
         if CATALOGUE_PATH.exists():
             catalogue = json.loads(CATALOGUE_PATH.read_text())
             for entry in catalogue:
-                if not db.get(Layer, entry["id"]):
+                existing = db.get(Layer, entry["id"])
+                if existing is None:
                     db.add(Layer(**entry))
+                    continue
+                # Update in place rather than skipping. The old behaviour
+                # ("insert only if absent") meant a layer already in the
+                # database could never be corrected by re-seeding, which is
+                # the sole reason the fix_*.sql files exist — every style
+                # bug (expression, nodata, Earth Search asset names,
+                # max_native_zoom) had to be hand-written as SQL because
+                # the catalogue was the source of truth everywhere except
+                # in the one database that mattered.
+                for column, value in entry.items():
+                    setattr(existing, column, value)
             db.commit()
         print("Seed complete.")
     finally:

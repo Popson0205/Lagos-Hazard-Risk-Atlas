@@ -24,16 +24,26 @@
 #      set it as DATABASE_URL below (Render dashboard > Environment, since
 #      it's a secret and not something to commit).
 #   3. Load the schema once:
-#      psql "$DATABASE_URL" -f backend/app/db_init.sql
+#        psql "$DATABASE_URL" -f backend/app/db_init_correct.sql
+#      NOTE: db_init_correct.sql, NOT db_init.sql. db_init.sql is an older,
+#      abandoned schema (tables `hazards`/`sort_order`/`source_uri`) that
+#      does not match app/models.py (`hazard_themes`/`display_order`/
+#      `raster_url`/`style`). Loading it produces
+#      `UndefinedTable: relation "hazard_themes" does not exist` on every
+#      request. db_init.sql should be deleted from the repo.
+#   4. Then apply the accumulated style fixes, in order:
+#        psql "$DATABASE_URL" -f backend/app/fix_expression_bug.sql
+#        psql "$DATABASE_URL" -f backend/app/fix_nodata_bug.sql
+#        psql "$DATABASE_URL" -f backend/app/fix_earth_search_switch.sql
+#        psql "$DATABASE_URL" -f backend/app/fix_max_native_zoom.sql
+#      These exist because app/seed.py only INSERTs layers that don't
+#      already exist and never UPDATEs ones that do, so re-seeding cannot
+#      correct a row that is already there.
 #
-# TiTiler (raster tile server): added below as its own free Web Service using
-# the public ghcr.io/developmentseed/titiler:latest image — no separate
-# Dockerfile needed. After first deploy, copy that service's URL (Render
-# dashboard > the titiler service > the URL shown at the top, something like
-# https://lagos-risk-atlas-titiler.onrender.com) into TITILER_BASE_URL below
-# on the main service (no trailing slash). Render's free tier spins services
-# down after 15 min idle — the first tile request after idle will be slow
-# (cold start) while it wakes back up.
+# TiTiler (raster tile server): its own Web Service using the public
+# ghcr.io/developmentseed/titiler:latest image — no separate Dockerfile
+# needed. After first deploy, copy that service's URL into TITILER_BASE_URL
+# below on the main service (no trailing slash).
 
 services:
   - type: web
@@ -61,16 +71,45 @@ services:
     runtime: image
     image:
       url: ghcr.io/developmentseed/titiler:latest
-    plan: free
+    # Was `free`. The free tier gives 0.1 CPU / 512 MB and, combined with
+    # WEB_CONCURRENCY=1 below, meant TiTiler served map tiles strictly one
+    # at a time. A single ward-sized viewport at zoom 16 is ~90 tile
+    # requests, so POST /api/v1/analysis queued behind all of them and
+    # timed out — while the identical request returned in ~8s whenever the
+    # queue happened to be empty. Capping max_native_zoom (see
+    # fix_max_native_zoom.sql) removes most of that queue; this gives the
+    # server enough headroom that a burst no longer blocks everything else.
+    plan: starter
     healthCheckPath: /healthz
     envVars:
       - key: PORT
         value: "10000"
       - key: HOST
         value: 0.0.0.0
+      # Two workers so a slow tile read can't block the whole service. Keep
+      # this modest: each worker holds its own GDAL cache, so workers x
+      # GDAL_CACHEMAX must stay well under the instance's memory.
       - key: WEB_CONCURRENCY
-        value: "1"
+        value: "2"
       - key: GDAL_CACHEMAX
         value: "200"
       - key: GDAL_DISABLE_READDIR_ON_OPEN
         value: EMPTY_DIR
+      # --- COG read tuning: the single biggest lever on per-tile latency ---
+      # Every tile is a range-read against a COG sitting in S3, so the cost
+      # is dominated by HTTP round-trips, not CPU. These are the standard
+      # rio-tiler/TiTiler settings for remote COGs.
+      - key: VSI_CACHE
+        value: "TRUE"
+      - key: VSI_CACHE_SIZE
+        value: "536870912" # 512 MB of chunk cache, shared per process
+      - key: CPL_VSIL_CURL_ALLOWED_EXTENSIONS
+        value: ".tif,.TIF,.tiff,.jp2"
+      - key: GDAL_HTTP_MULTIPLEX
+        value: "YES"
+      - key: GDAL_HTTP_VERSION
+        value: "2"
+      - key: GDAL_INGESTED_BYTES_AT_OPEN
+        value: "32768" # pull the COG header in one read instead of several
+      - key: GDAL_BAND_BLOCK_CACHE
+        value: HASHSET

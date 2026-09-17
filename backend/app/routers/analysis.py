@@ -1,4 +1,5 @@
 import json
+import time
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -85,6 +86,60 @@ def _run_vector_analysis(layer: Layer, body: AnalysisRequest, db: Session) -> Zo
     )
 
 
+# TiTiler runs one worker on Render's free tier, so it serves requests
+# strictly one at a time. A statistics call issued while the map is still
+# pulling tiles queues behind every one of them, and 502/504 here is almost
+# always "the queue was long", not "the request was wrong" — the identical
+# payload succeeds in ~8s once the tile burst drains. Retrying is therefore
+# the correct response, and doing it server-side (rather than making the
+# user click again) is what turns a flaky button into a reliable one.
+_RETRY_STATUS = {429, 500, 502, 503, 504}
+_RETRY_BACKOFF_SECONDS = (3, 9)  # two retries; ~12s of waiting worst case
+
+
+def _post_statistics_with_retry(url: str, params, feature: dict) -> httpx.Response:
+    """POST to TiTiler's statistics endpoint, retrying transient queue/cold-start
+    failures. Timeout is per-attempt: 75s covers a free-tier cold start (the
+    container spins down after 15 min idle) plus the actual raster read."""
+    last_error: str | None = None
+    last_status: int | None = None
+
+    for attempt in range(len(_RETRY_BACKOFF_SECONDS) + 1):
+        if attempt:
+            time.sleep(_RETRY_BACKOFF_SECONDS[attempt - 1])
+        try:
+            resp = httpx.post(url, params=params, json=feature, timeout=75)
+        except httpx.TimeoutException:
+            last_error, last_status = "timed out", 504
+            continue
+        except httpx.HTTPError as exc:
+            last_error, last_status = f"connection failed ({exc})", 502
+            continue
+
+        if resp.status_code in _RETRY_STATUS:
+            last_error = f"returned {resp.status_code}"
+            last_status = 502 if resp.status_code != 504 else 504
+            continue
+
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # A non-retryable 4xx — a genuinely bad request, so surface it as-is.
+            raise HTTPException(
+                status_code=502,
+                detail=f"TiTiler rejected the statistics request "
+                f"({exc.response.status_code}): {exc.response.text[:300]}",
+            ) from exc
+        return resp
+
+    raise HTTPException(
+        status_code=last_status or 502,
+        detail=f"The tile server {last_error} on every attempt. It is most likely still "
+        "busy rendering map tiles, or waking from idle. Wait a few seconds for the map "
+        "to finish loading, then run the analysis again.",
+    )
+
+
 def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) -> ZonalStatsResult:
     """Zonal statistics against a raster layer by delegating the actual
     pixel sampling to TiTiler's POST /stac/statistics (live STAC-recipe
@@ -144,26 +199,7 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
         )
 
     feature = {"type": "Feature", "geometry": body.geometry, "properties": {}}
-    try:
-        # 75s, not 30 — TiTiler's free-tier Render service spins down after
-        # 15 min idle, and a cold start plus the actual stats computation
-        # can genuinely take 40-60s the first time. A short timeout here
-        # just turns "slow" into a confusing hard failure.
-        resp = httpx.post(url, params=params, json=feature, timeout=75)
-        resp.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"TiTiler statistics request failed ({exc.response.status_code}): {exc.response.text[:300]}",
-        ) from exc
-    except httpx.TimeoutException as exc:
-        raise HTTPException(
-            status_code=504,
-            detail="TiTiler took too long to respond — if it's been idle a while (free tier "
-            "spins down after 15 minutes), it may just be waking up. Please try again.",
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Could not reach TiTiler: {exc}") from exc
+    resp = _post_statistics_with_retry(url, params, feature)
 
     data = resp.json()
     # TiTiler's GeoJSON statistics endpoints return the same Feature back
