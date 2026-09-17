@@ -616,7 +616,10 @@ async function main() {
     // request a plain numeric zonal-stats summary instead.
     const operation = activeDetail?.layer_type === "vector" ? "area_by_class" : "zonal_stats";
     runAnalysisBtn.disabled = true;
-    aoiResultEl.textContent = "Running analysis...";
+    aoiResultEl.textContent =
+      operation === "zonal_stats"
+        ? "Running analysis... (this can take up to ~90s the first time — the imagery service spins down when idle and has to wake up)"
+        : "Running analysis...";
     try {
       // Prefer the scene already resolved for the layer currently on the
       // map (activeDetail.scene_id) over re-resolving "most recent" from
@@ -692,7 +695,17 @@ async function main() {
       viewBtn.addEventListener("click", () => openAnalysisModal());
       aoiResultEl.appendChild(viewBtn);
     } catch (err) {
-      aoiResultEl.textContent = `Analysis unavailable: ${(err as Error).message}`;
+      aoiResultEl.innerHTML = "";
+      const msgEl = document.createElement("p");
+      msgEl.textContent = `Analysis unavailable: ${(err as Error).message}`;
+      aoiResultEl.appendChild(msgEl);
+
+      const retryBtn = document.createElement("button");
+      retryBtn.type = "button";
+      retryBtn.className = "link-btn";
+      retryBtn.textContent = "Try again";
+      retryBtn.addEventListener("click", () => runAnalysisBtn.click());
+      aoiResultEl.appendChild(retryBtn);
     } finally {
       runAnalysisBtn.disabled = false;
     }
