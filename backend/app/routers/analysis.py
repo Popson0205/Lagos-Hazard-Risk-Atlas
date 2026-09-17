@@ -129,14 +129,7 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
             assets=stac_recipe["assets"],
             expression=stac_recipe.get("expression"),
             nodata=stac_recipe.get("nodata"),
-            # 256, not 512: Landsat Collection 2's COGs on Earth Search
-            # don't downsample as cheaply via overviews as Sentinel-2's do,
-            # so statistics against a Landsat-backed recipe (extreme_heat)
-            # were reading enough raw data — on top of a cold-started
-            # TiTiler — to blow past the timeout below. Zonal stats over an
-            # LGA/ward-scale AOI don't need more than this to stay
-            # meaningfully accurate.
-            max_size=256,
+            max_size=512,
         )
         observed_at = str(item.datetime) if item.datetime else None
     elif layer.raster_url:
@@ -152,13 +145,11 @@ def _run_raster_analysis(layer: Layer, body: AnalysisRequest, request: Request) 
 
     feature = {"type": "Feature", "geometry": body.geometry, "properties": {}}
     try:
-        # 90s: TiTiler's free-tier Render service spins down after 15 min
-        # idle, and a cold start plus the actual stats computation can
-        # genuinely take 40-60s the first time — more for a Landsat-backed
-        # recipe (extreme_heat) whose COGs read slower than Sentinel-2's
-        # even after max_size above. A short timeout here just turns "slow"
-        # into a confusing hard failure.
-        resp = httpx.post(url, params=params, json=feature, timeout=90)
+        # 75s, not 30 — TiTiler's free-tier Render service spins down after
+        # 15 min idle, and a cold start plus the actual stats computation
+        # can genuinely take 40-60s the first time. A short timeout here
+        # just turns "slow" into a confusing hard failure.
+        resp = httpx.post(url, params=params, json=feature, timeout=75)
         resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise HTTPException(

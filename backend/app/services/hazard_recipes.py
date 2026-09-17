@@ -60,13 +60,6 @@ HAZARD_RECIPES: dict[str, dict] = {
         "colormap_name": "inferno",
         "max_cloud_cover": 20,
         "lookback_days": 90,
-        # Landsat's 0-DN fill pixels (scene edges, cloud-mask gaps) were
-        # being read as real data with no nodata set — see the big warning
-        # in stac_client.stac_statistics_url's docstring, which calls out
-        # this exact recipe's formula as the example of what goes wrong
-        # without it (0 -> a bogus ~-124°C entering the min/mean instead of
-        # being excluded).
-        "nodata": 0,
     },
     "coastal_flooding": {
         "collection": "sentinel-2-l2a",
