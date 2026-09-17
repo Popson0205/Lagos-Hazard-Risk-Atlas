@@ -162,6 +162,29 @@ select, input {
   margin-bottom: 18px;
 }
 .modal-summary strong { color: #93c5fd; font-weight: 600; }
+.modal-summary p { margin: 0 0 10px; }
+.modal-summary p:last-child { margin-bottom: 0; }
+.modal-summary .modal-implication {
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-weight: 500;
+}
+
+.modal-imagery-badge {
+  font-size: 12px;
+  color: var(--muted);
+  background: #0b1220;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0 0 14px;
+  display: inline-block;
+}
+.modal-imagery-badge.stale {
+  color: #fcd34d;
+  border-color: #78350f;
+  background: #1c1207;
+}
 
 .modal-figures details { margin-top: 4px; }
 .modal-figures summary {

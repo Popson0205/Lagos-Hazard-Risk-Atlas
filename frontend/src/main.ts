@@ -91,11 +91,138 @@ async function main() {
     return Number(n.toFixed(2)).toString();
   }
 
-  /** Plain-language paragraph for a raster (zonal_stats) result. */
-  function buildRasterSummary(layerName: string, unit: string, values: Record<string, number>): string {
+  /** Strips misleading "Live"/"Current" framing from a layer's catalogue
+   * name for display in the analysis popup — the imagery badge (built from
+   * observed_at, see below) is what actually tells the person how current
+   * the data is, so the name itself shouldn't imply real-time on its own. */
+  function cleanLayerDisplayName(name: string): string {
+    return name
+      .replace(/\bLive,?\s*/gi, "")
+      .replace(/\bCurrent\b\s*/gi, "")
+      .replace(/\(\s*,\s*/, "(")
+      .replace(/\(\s*\)/, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  function formatAcquisitionDate(iso: string): { label: string; daysAgo: number } {
+    const date = new Date(iso);
+    const label = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    const daysAgo = Math.max(0, Math.round((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)));
+    return { label, daysAgo };
+  }
+
+  /** Turns the raw index/temperature value into a plain "so what" sentence.
+   * Keyed off the layer's stored unit (NDWI/NDVI/C) or, for the two DEM-
+   * derived layers, its id — these mappings mirror the methodology notes
+   * already written in hazard_recipes.py / build_dem_derived_layers.py, not
+   * new domain claims. */
+  function getLaymanImplication(layerId: string, unit: string, values: Record<string, number>): string {
+    const rep = values.median ?? values.mean;
+    const max = values.max;
+
+    if (unit === "NDWI") {
+      if (rep === undefined) return "";
+      if (rep > 0.3) {
+        return "What this means: much of this area appears to have fairly extensive standing water right now — consistent with active flooding or waterlogging.";
+      }
+      if (rep > 0) {
+        return "What this means: there are scattered patches of standing water or saturated ground here, but not widespread flooding.";
+      }
+      let text = "What this means: this area is mostly dry land in this image, with no significant standing water detected.";
+      if (max !== undefined && max > 0.1) {
+        text += " That said, a few isolated spots read much wetter, which could be small ponds, waterlogged patches, or drainage channels worth a closer look.";
+      }
+      return text;
+    }
+
+    if (unit === "NDVI") {
+      if (rep === undefined) return "";
+      if (rep > 0.6) return "What this means: vegetation here looks vigorous and healthy, with little sign of drought stress.";
+      if (rep > 0.3) return "What this means: vegetation cover here is moderately healthy.";
+      if (rep > 0.1) {
+        return "What this means: vegetation here looks sparse or stressed — consistent with drought conditions, or simply bare ground and built-up surfaces.";
+      }
+      return "What this means: there's very little healthy vegetation here — either bare soil, water, or built-up surfaces, or significant drought stress if this area is normally green.";
+    }
+
+    if (unit === "C") {
+      if (rep === undefined) return "";
+      let text: string;
+      if (rep >= 40) {
+        text =
+          "What this means: these are very high surface temperatures — a strong sign of the urban heat island effect, where roads, roofs and bare ground absorb and re-radiate heat far more than vegetation or water does.";
+      } else if (rep >= 33) {
+        text =
+          "What this means: these are fairly warm surface temperatures typical of a built-up tropical area, with some urban heat buildup.";
+      } else {
+        text =
+          "What this means: these are relatively cool surface temperatures, suggesting more vegetation, shade, or nearby water moderating the heat.";
+      }
+      text +=
+        " One caveat: this is the temperature of the ground and rooftops themselves as seen from space, not the air temperature people feel — it usually runs several degrees hotter than air temperature, especially over asphalt or bare soil.";
+      return text;
+    }
+
+    if (layerId === "pluvial_flooding_relative_lowland_index") {
+      if (rep === undefined) return "";
+      if (rep < -1) {
+        return "What this means: this area sits noticeably lower than the land around it — a classic pattern for rainwater to collect and pond here during heavy storms.";
+      }
+      if (rep < 0) {
+        return "What this means: this area is somewhat lower than its surroundings, so it may collect a bit more rainwater than neighbouring land during heavy downpours.";
+      }
+      if (rep <= 1) {
+        return "What this means: this area sits at roughly the same level as its surroundings — neither a natural low point nor a high point for rainwater.";
+      }
+      return "What this means: this area sits higher than the land around it, so rainwater is more likely to drain away rather than pond here.";
+    }
+
+    if (layerId === "landslides_lagos_dem_relief") {
+      return "What this means: this is simply the ground elevation here — on its own it doesn't tell you landslide risk directly. What matters more is how sharply elevation changes over short distances (steep slopes), so it's best read alongside the terrain relief pattern rather than this number alone.";
+    }
+
+    return "";
+  }
+
+  function getVectorImplication(topClass: string, pct: number): string {
+    const lower = topClass.toLowerCase();
+    if (lower.includes("high") || lower.includes("severe") || lower.includes("extreme")) {
+      return `What this means: a large share of this area (about ${pct}%) falls in a higher-severity hazard class, so it likely deserves priority attention for mitigation or a closer follow-up assessment.`;
+    }
+    if (lower.includes("low") || lower.includes("minimal")) {
+      return `What this means: most of this area (about ${pct}%) falls in a lower-severity hazard class, so exposure here looks relatively limited based on this mapping.`;
+    }
+    return "What this means: this tells you how much of the area falls into each mapped hazard category — useful for prioritising where closer attention or mitigation may be needed.";
+  }
+
+  /** Plain-language paragraph(s) for a raster (zonal_stats) result — leads
+   * with how current the underlying image actually is (never calling a
+   * days- or months-old satellite pass "live"), then the stats, then a
+   * concrete "what this means" takeaway. */
+  function buildRasterSummary(
+    layerId: string,
+    layerName: string,
+    unit: string,
+    values: Record<string, number>,
+    observedAt: string | null | undefined,
+    relaxedSearch: boolean
+  ): string {
     const unitSuffix = unit ? ` ${unit}` : "";
     const { mean, median, min, max, percentile_2: p2, percentile_98: p98 } = values;
     const sentences: string[] = [];
+
+    if (observedAt) {
+      const { label, daysAgo } = formatAcquisitionDate(observedAt);
+      const ageClause =
+        daysAgo === 0 ? "captured today" : `captured ${label} — ${daysAgo} day${daysAgo === 1 ? "" : "s"} ago`;
+      const relaxedClause = relaxedSearch
+        ? " No sufficiently cloud-free scene was available closer to today, so the search window was widened to find this one."
+        : "";
+      sentences.push(
+        `This is based on a single satellite image ${ageClause}, the most recent usable pass found — not a live, real-time feed.${relaxedClause}`
+      );
+    }
 
     if (mean !== undefined) {
       sentences.push(
@@ -114,19 +241,23 @@ async function main() {
         `Individual spots range from as low as ${fmt(min)}${unitSuffix} to as high as ${fmt(max)}${unitSuffix} — overall, this area is ${variability}.`
       );
     }
-    if (!sentences.length) {
+    const hasStats = mean !== undefined || (p2 !== undefined && p98 !== undefined) || (min !== undefined && max !== undefined);
+    if (!hasStats) {
       sentences.push(`No usable pixel values were returned for ${layerName} in this area.`);
     }
-    return sentences.join(" ");
+
+    const statsHtml = `<p>${sentences.join(" ")}</p>`;
+    const implication = getLaymanImplication(layerId, unit, values);
+    return implication ? `${statsHtml}<p class="modal-implication">${implication}</p>` : statsHtml;
   }
 
   /** Plain-language paragraph for a vector (area_by_class) result. */
-  function buildVectorSummary(layerName: string, areaKm2: number, byClass: Record<string, number>): string {
+  function buildVectorSummary(layerName: string, byClass: Record<string, number>): string {
     const entries = Object.entries(byClass).sort((a, b) => b[1] - a[1]);
     if (!entries.length) {
-      return `No mapped <strong>${layerName}</strong> features were found inside this area.`;
+      return `<p>No mapped <strong>${layerName}</strong> features were found inside this area.</p>`;
     }
-    const total = entries.reduce((sum, [, v]) => sum + v, 0) || areaKm2;
+    const total = entries.reduce((sum, [, v]) => sum + v, 0);
     const pct = (v: number) => (total > 0 ? Math.round((v / total) * 100) : 0);
     const [topClass, topArea] = entries[0];
     let text = `Within this area, mapped <strong>${layerName}</strong> hazard zones mostly fall under <strong>"${topClass}"</strong>, covering about ${pct(topArea)}% of the mapped extent (${fmt(topArea)} km²).`;
@@ -137,7 +268,7 @@ async function main() {
         .join(", ");
       text += ` The rest is split across ${rest}${entries.length > 4 ? ", and others" : ""}.`;
     }
-    return text;
+    return `<p>${text}</p><p class="modal-implication">${getVectorImplication(topClass, pct(topArea))}</p>`;
   }
 
   const FIGURE_UNIT_KEYS = new Set([
@@ -167,10 +298,14 @@ async function main() {
     summaryHtml: string;
     figures: Record<string, number>;
     figureAreaUnit?: string;
+    observedAt?: string | null;
+    relaxedSearch?: boolean;
     notes: string[];
   }): void {
-    const { aoi, layerName, hazardName, unit, summaryHtml, figures, figureAreaUnit, notes } = params;
+    const { aoi, layerName, hazardName, unit, summaryHtml, figures, figureAreaUnit, observedAt, relaxedSearch, notes } =
+      params;
     const aoiInfo = describeAoi(aoi);
+    const cleanedName = cleanLayerDisplayName(layerName);
     const figureRows = Object.entries(figures)
       .map(
         ([k, v]) =>
@@ -180,10 +315,20 @@ async function main() {
       )
       .join("");
 
+    let imageryBadge = "";
+    if (observedAt) {
+      const { label, daysAgo } = formatAcquisitionDate(observedAt);
+      const stale = daysAgo > 30;
+      imageryBadge = `<p class="modal-imagery-badge${stale ? " stale" : ""}">📅 Satellite pass: ${label} (${daysAgo} day${
+        daysAgo === 1 ? "" : "s"
+      } ago)${relaxedSearch ? " · widened search, no closer scene found" : ""} — not live/real-time</p>`;
+    }
+
     analysisModalBody.innerHTML = `
       <p class="modal-eyebrow" id="analysis-modal-title">${aoiInfo.eyebrow}${hazardName ? ` · ${hazardName}` : ""}</p>
       <h2 class="modal-title">${aoiInfo.title}</h2>
-      <p class="modal-subtitle">${layerName}</p>
+      <p class="modal-subtitle">${cleanedName}</p>
+      ${imageryBadge}
       <div class="modal-summary">${summaryHtml}</div>
       ${
         figureRows
@@ -466,27 +611,30 @@ async function main() {
       const unit = activeDetail?.unit ?? "";
       const hazard = hazards.find((h) => h.id === activeDetail?.hazard_theme_id);
 
-      const notes: string[] = [];
-      if (result.observed_at) notes.push(`Imagery date: ${result.observed_at.slice(0, 10)}.`);
-      if (result.relaxed_search) {
-        notes.push("No cloud-free scene was available near the requested date, so the search window was widened.");
-      }
-
       if (operation === "zonal_stats" && result.values) {
-        const summaryHtml =
-          buildRasterSummary(layerName, unit, result.values) +
-          ` <span style="color:var(--muted)">(based on ${result.feature_count} sampled pixel(s) over ${result.area_km2} km².)</span>`;
+        const summaryHtml = buildRasterSummary(
+          activeDetail?.id ?? "",
+          layerName,
+          unit,
+          result.values,
+          result.observed_at,
+          result.relaxed_search ?? false
+        );
         renderAnalysisModal({
           aoi: currentAoi,
           layerName,
           hazardName: hazard?.name,
           unit,
-          summaryHtml,
+          summaryHtml:
+            summaryHtml +
+            `<p class="modal-note" style="margin-top:10px">Based on ${result.feature_count} sampled pixel(s) over ${result.area_km2} km².</p>`,
           figures: result.values,
-          notes,
+          observedAt: result.observed_at,
+          relaxedSearch: result.relaxed_search,
+          notes: [],
         });
       } else if (operation === "area_by_class" && result.by_class) {
-        const summaryHtml = buildVectorSummary(layerName, result.area_km2, result.by_class);
+        const summaryHtml = buildVectorSummary(layerName, result.by_class);
         renderAnalysisModal({
           aoi: currentAoi,
           layerName,
@@ -495,7 +643,7 @@ async function main() {
           summaryHtml,
           figures: result.by_class,
           figureAreaUnit: "km²",
-          notes,
+          notes: [],
         });
       } else {
         renderAnalysisModal({
@@ -503,9 +651,9 @@ async function main() {
           layerName,
           hazardName: hazard?.name,
           unit,
-          summaryHtml: `No pixel or feature values were returned for ${layerName} in this area.`,
+          summaryHtml: `<p>No pixel or feature values were returned for ${layerName} in this area.</p>`,
           figures: {},
-          notes,
+          notes: [],
         });
       }
 
