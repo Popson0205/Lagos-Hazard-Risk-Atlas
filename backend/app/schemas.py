@@ -55,6 +55,14 @@ class LayerDetailOut(LayerOut):
     # looking at, since "live" means a different date every time it's asked.
     observed_at: str | None = None
     cloud_cover: float | None = None
+    # The resolved STAC item id behind observed_at (or the user's explicitly
+    # pinned scene_id echoed back). The frontend passes this straight into
+    # POST /analysis so that request re-fetches this exact item by id
+    # (a single lightweight lookup) instead of re-running the same
+    # collection/bbox/date-range search that just resolved it here —
+    # avoiding a redundant round trip to the STAC API on every "Run
+    # analysis" click, and guaranteeing the stats match the displayed scene.
+    scene_id: str | None = None
     # True if the strict lookback/cloud-cover window from the recipe found
     # nothing and a much wider, unfiltered fallback search is what actually
     # produced this scene — Lagos's monsoon season makes that fairly common,

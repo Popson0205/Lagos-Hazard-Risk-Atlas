@@ -618,11 +618,20 @@ async function main() {
     runAnalysisBtn.disabled = true;
     aoiResultEl.textContent = "Running analysis...";
     try {
+      // Prefer the scene already resolved for the layer currently on the
+      // map (activeDetail.scene_id) over re-resolving "most recent" from
+      // scratch — layers.getSceneId() is only non-null once the user has
+      // explicitly pinned a scene via the scene browser. Passing an exact
+      // scene_id lets the backend fetch that one STAC item directly
+      // instead of re-running the collection/date-range search that just
+      // produced it a moment ago when this layer was displayed, which is
+      // most of what made "Run analysis" feel slow, and also guarantees
+      // the stats match what's actually shown on the map.
       const result = await api.runAnalysis({
         layer_id: layerId,
         geometry: currentAoi.geometry,
         operation,
-        scene_id: layers.getSceneId() ?? undefined,
+        scene_id: layers.getSceneId() ?? activeDetail?.scene_id ?? undefined,
       });
 
       const layerName = activeDetail?.name ?? "this layer";

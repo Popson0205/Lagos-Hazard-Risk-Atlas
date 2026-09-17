@@ -62,6 +62,11 @@ export interface LayerDetail extends Layer {
   observed_at?: string | null;
   cloud_cover?: number | null;
   relaxed_search?: boolean;
+  /** The STAC item id actually behind this layer right now (resolved
+   * server-side, or the user's pinned scene echoed back). Reusing this for
+   * "Run analysis" lets that request skip re-searching the catalogue and
+   * fetch the exact same scene by id instead — see main.ts. */
+  scene_id?: string | null;
 }
 
 export interface SearchResult {

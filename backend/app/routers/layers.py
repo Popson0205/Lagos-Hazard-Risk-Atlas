@@ -54,6 +54,7 @@ def get_layer(
     observed_at = None
     cloud_cover = None
     relaxed_search = False
+    resolved_scene_id = None
 
     if layer.layer_type == "raster":
         style = layer.style or {}
@@ -103,6 +104,7 @@ def get_layer(
             )
             observed_at = str(item.datetime) if item.datetime else None
             cloud_cover = item.properties.get("eo:cloud_cover")
+            resolved_scene_id = item.id
         elif layer.raster_url:
             colormap = (layer.style or {}).get("colormap_name")
             rescale = (layer.style or {}).get("rescale")
@@ -117,4 +119,5 @@ def get_layer(
         observed_at=observed_at,
         cloud_cover=cloud_cover,
         relaxed_search=relaxed_search,
+        scene_id=resolved_scene_id,
     )

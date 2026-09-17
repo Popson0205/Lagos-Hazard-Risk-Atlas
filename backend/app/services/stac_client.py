@@ -40,6 +40,7 @@ Typical hazard <-> collection mapping (adjust as your methodology firms up):
 """
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
 
@@ -50,6 +51,28 @@ from app.config import get_settings
 settings = get_settings()
 
 _catalog: Client | None = None
+
+# Short-lived cache for find_best_scene()'s own search — searching Earth
+# Search's catalogue (list + sort candidate items) is the single slowest
+# step in resolving a "live" layer, and the same (collection, bbox,
+# lookback_days, max_cloud_cover, day) combination gets asked repeatedly in
+# quick succession: once when a hazard theme's layer is first displayed on
+# the map, and (absent an explicit scene_id) again moments later when the
+# user clicks "Run analysis" against it. A short TTL just collapses that
+# immediate duplicate work; it's well under how often the underlying "most
+# recent scene" can actually change.
+_SCENE_CACHE_TTL_SECONDS = 300
+_scene_cache: dict[tuple, tuple[float, object]] = {}
+
+
+def _cached_or_call(key: tuple, fn):
+    now = time.monotonic()
+    cached = _scene_cache.get(key)
+    if cached is not None and now - cached[0] < _SCENE_CACHE_TTL_SECONDS:
+        return cached[1]
+    result = fn()
+    _scene_cache[key] = (now, result)
+    return result
 
 # Lagos State roughly spans 2.7-4.3E, 6.35-6.7N (matches frontend/src/map/mapInit.ts).
 LAGOS_BBOX: list[float] = [2.7, 6.35, 4.3, 6.7]
@@ -183,11 +206,20 @@ class NoScenesFoundError(RuntimeError):
 
 
 def get_item_by_id(collection: str, item_id: str):
-    """Fetch one STAC item by id."""
+    """Fetch one STAC item by id. A pinned/resolved scene_id never refers to
+    a different item, so this is cached indefinitely (no TTL) per
+    (collection, item_id) — unlike find_best_scene above, there's no "most
+    recent" freshness to expire."""
+    cache_key = ("get_item_by_id", collection, item_id)
+    cached = _scene_cache.get(cache_key)
+    if cached is not None:
+        return cached[1]
+
     catalog = get_catalog()
     item = catalog.get_collection(collection).get_item(item_id)
     if item is None:
         raise NoScenesFoundError(f"Item '{item_id}' not found in collection '{collection}'")
+    _scene_cache[cache_key] = (time.monotonic(), item)
     return item
 
 
@@ -242,34 +274,46 @@ def find_best_scene(
     Lagos's cloudy season, or for a window before satellite coverage began —
     widen lookback_days or relax max_cloud_cover for those months).
     """
-    catalog = get_catalog()
     end = anchor_date or datetime.utcnow().date()
     start = end - timedelta(days=lookback_days)
 
-    query = {}
-    if max_cloud_cover is not None and collection in {"sentinel-2-l2a", "landsat-c2-l2"}:
-        query["eo:cloud_cover"] = {"lt": max_cloud_cover}
-
-    search = catalog.search(
-        collections=[collection],
-        bbox=bbox or LAGOS_BBOX,
-        datetime=f"{start.isoformat()}/{end.isoformat()}",
-        query=query or None,
-        limit=50,
+    cache_key = (
+        "find_best_scene",
+        collection,
+        tuple(bbox) if bbox else None,
+        lookback_days,
+        max_cloud_cover,
+        end.isoformat(),
     )
-    items = list(search.items())
-    if not items:
-        window_desc = f"{start.isoformat()} to {end.isoformat()}"
-        raise NoScenesFoundError(
-            f"No '{collection}' scenes over Lagos between {window_desc} "
-            f"under {max_cloud_cover}% cloud cover"
+
+    def _search():
+        catalog = get_catalog()
+        query = {}
+        if max_cloud_cover is not None and collection in {"sentinel-2-l2a", "landsat-c2-l2"}:
+            query["eo:cloud_cover"] = {"lt": max_cloud_cover}
+
+        search = catalog.search(
+            collections=[collection],
+            bbox=bbox or LAGOS_BBOX,
+            datetime=f"{start.isoformat()}/{end.isoformat()}",
+            query=query or None,
+            limit=50,
         )
+        items = list(search.items())
+        if not items:
+            window_desc = f"{start.isoformat()} to {end.isoformat()}"
+            raise NoScenesFoundError(
+                f"No '{collection}' scenes over Lagos between {window_desc} "
+                f"under {max_cloud_cover}% cloud cover"
+            )
 
-    def cloud_cover(item):
-        return item.properties.get("eo:cloud_cover", 100)
+        def cloud_cover(item):
+            return item.properties.get("eo:cloud_cover", 100)
 
-    items.sort(key=cloud_cover)
-    return items[0]
+        items.sort(key=cloud_cover)
+        return items[0]
+
+    return _cached_or_call(cache_key, _search)
 
 
 def stac_item_json_url(request_base_url: str, collection: str, item_id: str) -> str:
