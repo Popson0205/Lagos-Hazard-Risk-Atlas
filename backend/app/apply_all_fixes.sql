@@ -49,3 +49,6 @@ SELECT id,
 FROM layers
 WHERE style ? 'stac'
 ORDER BY id;
+
+\echo '7/7  LST colormap blue->red + JRC seasonality legend range'
+\i fix_lst_colormap_legend_range.sql

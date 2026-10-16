@@ -11,7 +11,7 @@
     "methodology": "LST derived from Landsat thermal band, atmospherically corrected surface temperature product. Computed live per request from the least-cloudy Landsat scene over Lagos in the last 90 days (see backend/app/services/hazard_recipes.py) — not a fixed historical baseline.",
     "raster_url": null,
     "style": {
-      "colormap_name": "inferno",
+      "colormap_name": "coolwarm",
       "rescale": "20,45",
       "stac": {
         "collection": "landsat-c2-l2",
@@ -20,7 +20,7 @@
         ],
         "expression": "b1*0.00341802+149.0-273.15",
         "rescale": "20,45",
-        "colormap_name": "inferno",
+        "colormap_name": "coolwarm",
         "max_cloud_cover": 20,
         "lookback_days": 90,
         "nodata": 0
@@ -147,6 +147,7 @@
     "style": {
       "xyz_url": "https://storage.googleapis.com/global-surface-water/tiles2021/seasonality/{z}/{x}/{y}.png",
       "max_native_zoom": 13,
+      "legend_range": [0, 12],
       "breaks": [
         "Never water (0 months/yr)",
         "Seasonal water (1–11 months/yr)",

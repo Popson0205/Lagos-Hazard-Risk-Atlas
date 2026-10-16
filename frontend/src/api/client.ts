@@ -53,6 +53,12 @@ export const api = {
     return getJSON<LayerDetail>(`${BASE}/layers/${layerId}${qs}`);
   },
 
+  getLayerRange: (layerId: string, geometry: GeoJSON.Geometry | null, sceneId?: string | null) =>
+    postJSON<{ min: number; max: number; tile_url: string }>(`${BASE}/layers/${layerId}/range`, {
+      geometry,
+      scene_id: sceneId ?? null,
+    }),
+
   getFeatures: (layerId: string, bbox?: [number, number, number, number]) => {
     const qs = bbox ? `?bbox=${bbox.join(",")}` : "";
     return getJSON<GeoJSON.FeatureCollection>(`${BASE}/layers/${layerId}/features${qs}`);

@@ -57,7 +57,7 @@ HAZARD_RECIPES: dict[str, dict] = {
         "assets": ["lwir11"],
         "expression": "lwir11*0.00341802+149.0-273.15",  # -> degrees Celsius
         "rescale": "20,45",
-        "colormap_name": "inferno",
+        "colormap_name": "coolwarm",  # blue (min) -> red (max)
         "max_cloud_cover": 20,
         "lookback_days": 90,
     },

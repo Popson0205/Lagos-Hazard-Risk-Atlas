@@ -53,6 +53,21 @@ export class LayerManager {
 
   private async activate(layerId: string): Promise<void> {
     const detail = await api.getLayer(layerId, this.currentSceneId);
+
+    // Stretch the colour ramp (and legend) to the real min/max of this layer
+    // over the selected AOI, or over all of Lagos when nothing is selected.
+    // Done before the tile layer is added so tiles are only ever requested
+    // once, with the final range. If it fails (no valid pixels, tile server
+    // busy) we fall back to the catalogue's fixed rescale.
+    if (detail.layer_type === "raster" && detail.tile_url && detail.style?.colormap_name && !detail.style?.xyz_url) {
+      try {
+        const range = await api.getLayerRange(layerId, this.aoiGeometry, detail.scene_id ?? this.currentSceneId);
+        detail.tile_url = range.tile_url;
+        detail.value_range = [range.min, range.max];
+      } catch (err) {
+        console.warn(`Could not calculate value range for ${layerId}; using the catalogue range.`, err);
+      }
+    }
     this.details.set(layerId, detail);
 
     let leafletLayer: L.Layer;

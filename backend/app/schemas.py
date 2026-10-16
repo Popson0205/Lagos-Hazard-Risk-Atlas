@@ -139,3 +139,19 @@ class ZonalStatsResult(BaseModel):
     # exactly the requested day).
     observed_at: str | None = None
     relaxed_search: bool = False
+
+
+class LayerRangeRequest(BaseModel):
+    """Area the legend/colour ramp should be calculated over. `geometry` is
+    the selected AOI; omit it to use the whole of Lagos State."""
+
+    geometry: dict[str, Any] | None = None
+    scene_id: str | None = None
+
+
+class LayerRangeOut(BaseModel):
+    min: float
+    max: float
+    # Same tile template as GET /layers/{id}, but with the colour ramp
+    # stretched to [min, max] so the map and the legend agree exactly.
+    tile_url: str

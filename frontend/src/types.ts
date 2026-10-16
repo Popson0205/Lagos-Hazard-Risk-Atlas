@@ -23,6 +23,9 @@ export interface LayerStyle {
    * served directly, bypassing TiTiler/STAC entirely. */
   xyz_url?: string;
   max_native_zoom?: number;
+  /** Fixed [min, max] for pre-rendered layers that can't be calculated
+   * (e.g. JRC seasonality, 0-12 months). Shown on the legend ramp. */
+  legend_range?: [number, number];
   /** Present only on "live" layers — which Planetary Computer STAC
    * collection to browse/search scenes from (see STACItem below). */
   stac?: { collection: string };
@@ -62,6 +65,9 @@ export interface LayerDetail extends Layer {
   observed_at?: string | null;
   cloud_cover?: number | null;
   relaxed_search?: boolean;
+  /** Min/max actually calculated over the current area (the selected AOI,
+   * or all of Lagos). The map tiles are stretched to this same range. */
+  value_range?: [number, number] | null;
   /** The STAC item id actually behind this layer right now (resolved
    * server-side, or the user's pinned scene echoed back). Reusing this for
    * "Run analysis" lets that request skip re-searching the catalogue and

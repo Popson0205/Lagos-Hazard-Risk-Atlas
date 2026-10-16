@@ -13,6 +13,7 @@ const COLORMAP_GRADIENTS: Record<string, string[]> = {
   coolwarm: ["#3b4cc0", "#93b5fe", "#f7f7f7", "#f6a385", "#b40426"],
   terrain: ["#333399", "#00994d", "#b3d96b", "#e6c35c", "#a0522d", "#ffffff"],
   jet: ["#00007f", "#0000ff", "#00ffff", "#ffff00", "#ff0000", "#7f0000"],
+  bwr: ["#0000ff", "#ffffff", "#ff0000"],
   gray: ["#000000", "#ffffff"],
   greys: ["#000000", "#ffffff"],
 };
@@ -23,96 +24,53 @@ function gradientCss(colormapName: string): string | null {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
-/** Renders the legend panel for the currently-selected layer, driven by
- * backend-supplied style/classification metadata (architecture doc section 8:
- * "Legend driven by backend metadata and classification rules"). */
+function fmtValue(n: number): string {
+  return Number(n.toFixed(2)).toString();
+}
+
+/** Legend = colour ramp + min and max value, nothing else (no title, unit,
+ * date or notes). The min/max are the values calculated over the current
+ * area (detail.value_range, set by LayerManager from /layers/{id}/range), so
+ * the labels always match what the map is actually showing. */
 export function renderLegend(container: HTMLElement, detail: LayerDetail | null): void {
   container.innerHTML = "";
-
-  if (!detail) {
-    container.innerHTML = '<span style="color:#6b7280">No active layer selected.</span>';
-    return;
-  }
-
-  const title = document.createElement("div");
-  title.textContent = detail.name;
-  title.style.fontWeight = "600";
-  title.style.marginBottom = "6px";
-  container.appendChild(title);
-
-  if (detail.unit) {
-    const unit = document.createElement("div");
-    unit.textContent = `Unit: ${detail.unit}`;
-    unit.style.color = "#9ca3af";
-    unit.style.marginBottom = "6px";
-    container.appendChild(unit);
-  }
+  if (!detail) return;
 
   const style = detail.style;
-  if (style?.breaks && style?.colors) {
-    style.breaks.forEach((brk, i) => {
-      const row = document.createElement("div");
-      const swatch = document.createElement("span");
-      swatch.className = "legend-swatch";
-      swatch.style.background = style.colors![i] ?? "#666";
-      row.appendChild(swatch);
-      row.appendChild(document.createTextNode(`${brk}`));
-      container.appendChild(row);
-    });
-  } else if (style?.colormap_name) {
-    const gradient = gradientCss(style.colormap_name);
-    if (gradient) {
-      const [min, max] = (style.rescale ?? "").split(",");
-      const bar = document.createElement("div");
-      bar.style.height = "14px";
-      bar.style.borderRadius = "3px";
-      bar.style.background = gradient;
-      bar.style.marginBottom = "4px";
-      container.appendChild(bar);
+  let gradient: string | null = null;
+  let range: [number, number] | null = null;
 
-      if (min !== undefined && max !== undefined) {
-        const labels = document.createElement("div");
-        labels.style.display = "flex";
-        labels.style.justifyContent = "space-between";
-        labels.style.fontSize = "0.85em";
-        labels.style.color = "#9ca3af";
-        labels.style.marginBottom = "6px";
-        const minEl = document.createElement("span");
-        minEl.textContent = min.trim();
-        const maxEl = document.createElement("span");
-        maxEl.textContent = max.trim();
-        labels.appendChild(minEl);
-        labels.appendChild(maxEl);
-        container.appendChild(labels);
-      }
-    } else {
-      const row = document.createElement("div");
-      row.textContent = `Colormap: ${style.colormap_name}${style.rescale ? ` (range ${style.rescale})` : ""}`;
-      container.appendChild(row);
+  if (style?.breaks && style?.colors) {
+    // Pre-rendered layers (JRC): ramp from the layer's own colours; labels
+    // only where the catalogue gives a fixed numeric range.
+    gradient = `linear-gradient(to right, ${style.colors.join(", ")})`;
+    range = style.legend_range ?? null;
+  } else if (style?.colormap_name) {
+    gradient = gradientCss(style.colormap_name);
+    if (detail.value_range) {
+      range = detail.value_range;
+    } else if (style.rescale) {
+      // Fallback if the range couldn't be calculated.
+      const [lo, hi] = style.rescale.split(",").map(Number);
+      if (Number.isFinite(lo) && Number.isFinite(hi)) range = [lo, hi];
     }
   }
+  if (!gradient) return;
 
-  if (detail.observed_at) {
-    const observed = document.createElement("div");
-    observed.style.marginTop = "6px";
-    observed.style.fontSize = "0.85em";
-    observed.style.color = "#a3e635";
-    const dateStr = detail.observed_at.slice(0, 10);
-    const cloudStr =
-      detail.cloud_cover !== undefined && detail.cloud_cover !== null
-        ? ` · ${detail.cloud_cover.toFixed(0)}% cloud cover`
-        : "";
-    observed.textContent = `Imagery date: ${dateStr}${cloudStr}`;
-    container.appendChild(observed);
+  const bar = document.createElement("div");
+  bar.className = "legend-bar";
+  bar.style.background = gradient;
+  container.appendChild(bar);
 
-    if (detail.relaxed_search) {
-      const note = document.createElement("div");
-      note.style.marginTop = "4px";
-      note.style.fontSize = "0.85em";
-      note.style.color = "#f59e0b";
-      note.textContent =
-        "No cloud-free scene near the requested date — showing the best available from a wider search window.";
-      container.appendChild(note);
-    }
+  if (range) {
+    const labels = document.createElement("div");
+    labels.className = "legend-labels";
+    const minEl = document.createElement("span");
+    minEl.textContent = fmtValue(range[0]);
+    const maxEl = document.createElement("span");
+    maxEl.textContent = fmtValue(range[1]);
+    labels.appendChild(minEl);
+    labels.appendChild(maxEl);
+    container.appendChild(labels);
   }
 }
