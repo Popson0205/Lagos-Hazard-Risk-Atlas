@@ -115,13 +115,4 @@ export function renderLegend(container: HTMLElement, detail: LayerDetail | null)
       container.appendChild(note);
     }
   }
-
-  if (detail.methodology) {
-    const meth = document.createElement("div");
-    meth.style.marginTop = "8px";
-    meth.style.fontStyle = "italic";
-    meth.style.color = "#9ca3af";
-    meth.textContent = detail.methodology;
-    container.appendChild(meth);
-  }
 }
