@@ -44,6 +44,8 @@ async function main() {
   const cancelBtn = document.getElementById("aoi-cancel-btn") as HTMLButtonElement;
   const clearBtn = document.getElementById("aoi-clear-btn") as HTMLButtonElement;
   const runAnalysisBtn = document.getElementById("aoi-run-analysis-btn") as HTMLButtonElement;
+  const analysisHintEl = document.getElementById("analysis-hint") as HTMLDivElement;
+  const sceneSectionEl = document.getElementById("scene-search-section") as HTMLElement;
 
   const analysisModalOverlay = document.getElementById("analysis-modal-overlay") as HTMLDivElement;
   const analysisModalBody = document.getElementById("analysis-modal-body") as HTMLDivElement;
@@ -361,8 +363,41 @@ async function main() {
     openAnalysisModal();
   }
 
-  // --- Area of interest: pick a boundary, or draw a custom polygon ---
+  // --- Workflow state: what's unlocked at each step ---
   let currentAoi: Aoi | null = null;
+
+  /** Step 4 (imagery scene) only means something for a live satellite layer
+   * (Heat / Coastal Flooding / Drought). Lock it, with a pointer back to
+   * step 2, until one is switched on. */
+  function updateSceneSection(): void {
+    const live = !!layers.getTopActiveDetail()?.style?.stac?.collection;
+    sceneSectionEl.classList.toggle("locked", !live);
+    searchScenesBtn.disabled = !live;
+    if (!live) {
+      sceneListEl.innerHTML = "";
+      sceneSearchStatusEl.textContent = layers.getTopActiveLayerId()
+        ? "This layer isn't tied to a single satellite scene, so there's nothing to pick here."
+        : "Switch on a live layer in step 2 (Extreme Heat, Coastal Flooding or Drought) to browse scenes.";
+    } else if (!sceneListEl.children.length && !sceneSearchStatusEl.textContent) {
+      sceneSearchStatusEl.textContent = currentAoi
+        ? "Search scenes that cover your area, or skip to use the most recent one."
+        : "Search scenes, or skip to use the most recent one.";
+    }
+  }
+
+  /** Step 5 button + hint: say exactly what's still missing. */
+  function updateAnalysisState(): void {
+    const hasLayer = !!layers.getTopActiveLayerId();
+    runAnalysisBtn.disabled = !hasLayer || !currentAoi;
+    analysisHintEl.hidden = hasLayer && !!currentAoi;
+    analysisHintEl.textContent = !hasLayer && !currentAoi
+      ? "Needs an active layer (step 2) and an area of interest (step 3)."
+      : !hasLayer
+        ? "Switch on a layer in step 2."
+        : "Select or draw an area in step 3.";
+  }
+
+  // --- Area of interest: pick a boundary, or draw a custom polygon ---
   let drawnAoiLayer: L.GeoJSON | null = null;
 
   function clearDrawnAoiLayer(): void {
@@ -392,7 +427,8 @@ async function main() {
     }
 
     clearBtn.hidden = false;
-    runAnalysisBtn.disabled = !layers.getTopActiveLayerId();
+    updateAnalysisState();
+    updateSceneSection();
     aoiResultEl.textContent = "";
 
     // Clip any active raster layer(s) to this shape instead of leaving them
@@ -409,7 +445,8 @@ async function main() {
     clearDrawnAoiLayer();
     aoiSummaryEl.textContent = "No area selected. Pick a ward, or draw your own.";
     clearBtn.hidden = true;
-    runAnalysisBtn.disabled = true;
+    updateAnalysisState();
+    updateSceneSection();
     aoiResultEl.textContent = "";
 
     layers.setAoiMask(null);
@@ -570,9 +607,7 @@ async function main() {
     const activeDetail = layers.getTopActiveDetail();
     const collection = activeDetail?.style?.stac?.collection;
     if (!collection) {
-      sceneSearchStatusEl.textContent =
-        "Toggle on a live layer first (Extreme Heat, Coastal Flooding, or Drought) — this searches whichever one is active.";
-      sceneListEl.innerHTML = "";
+      updateSceneSection();
       return;
     }
 
@@ -599,15 +634,19 @@ async function main() {
     try {
       const scenes = await api.searchScenes({ collection, startDate: start, endDate: end, maxCloudCover, bbox });
       if (scenes.length === 0) {
-        sceneSearchStatusEl.textContent = "No scenes found for that range/cloud filter — try widening it.";
+        sceneSearchStatusEl.textContent = currentAoi
+          ? "No single scene fully covers your area at that cloud limit — try a higher cloud cover or a wider date range."
+          : "No scenes found for that range/cloud filter — try widening it.";
         return;
       }
-      sceneSearchStatusEl.textContent = `Found ${scenes.length} scene(s) for ${activeDetail!.name} — pick one.`;
+      sceneSearchStatusEl.textContent = currentAoi
+        ? `${scenes.length} clearest scene${scenes.length === 1 ? "" : "s"} covering your area — pick one.`
+        : `${scenes.length} clearest scene${scenes.length === 1 ? "" : "s"} over Lagos — pick one.`;
       renderSceneList(scenes);
     } catch (err) {
       sceneSearchStatusEl.textContent = `Search failed: ${(err as Error).message}`;
     } finally {
-      searchScenesBtn.disabled = false;
+      updateSceneSection();
     }
   });
 
@@ -707,7 +746,7 @@ async function main() {
       aoiResultEl.textContent = `Analysis unavailable: ${(err as Error).message}`;
     } finally {
       restoreTiles();
-      runAnalysisBtn.disabled = false;
+      updateAnalysisState();
     }
   });
 
@@ -762,7 +801,8 @@ async function main() {
           alert((err as Error).message);
         } finally {
           checkbox.disabled = false;
-          runAnalysisBtn.disabled = !currentAoi || !layers.getTopActiveLayerId();
+          updateAnalysisState();
+          updateSceneSection();
         }
       });
       const label = document.createElement("span");
@@ -773,6 +813,8 @@ async function main() {
     }
   }
 
+  updateAnalysisState();
+  updateSceneSection();
   hazardSelect.addEventListener("change", refreshLayerList);
   scenarioSelect.addEventListener("change", refreshLayerList);
   await refreshLayerList();

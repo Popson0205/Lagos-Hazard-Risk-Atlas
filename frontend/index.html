@@ -16,18 +16,58 @@
       <aside id="sidebar">
         <h1>Lagos Risk Atlas</h1>
 
-        <section>
+        <!-- Workflow: 1 choose hazard -> 2 switch on a layer -> 3 set the area
+             -> 4 (live layers) pick a satellite scene -> 5 run analysis. -->
+
+        <section id="step-hazard">
+          <h2><span class="step-num">1</span>Hazard &amp; scenario</h2>
           <label for="hazard-select">Hazard theme</label>
           <select id="hazard-select"></select>
-        </section>
-
-        <section>
           <label for="scenario-select">Scenario / period</label>
           <select id="scenario-select"></select>
         </section>
 
-        <section id="scene-search-section">
-          <label>Imagery scene</label>
+        <section id="layer-list-section">
+          <h2><span class="step-num">2</span>Layers</h2>
+          <ul id="layer-list"></ul>
+        </section>
+
+        <section id="aoi-section">
+          <h2><span class="step-num">3</span>Area of interest</h2>
+          <label for="search-input">Search a place, LGA or ward</label>
+          <input id="search-input" type="text" placeholder="e.g. Ikeja" />
+          <ul id="search-results"></ul>
+
+          <div id="boundaries-section">
+            <label for="boundary-state-select">State</label>
+            <select id="boundary-state-select" disabled>
+              <option value="lagos">Lagos</option>
+            </select>
+            <label for="boundary-lga-select">Local Government Area</label>
+            <select id="boundary-lga-select">
+              <option value="">Loading LGAs…</option>
+            </select>
+            <label for="boundary-ward-select">Ward</label>
+            <select id="boundary-ward-select" disabled>
+              <option value="">Select an LGA first…</option>
+            </select>
+          </div>
+
+          <div class="or-divider"><span>or</span></div>
+          <div class="button-row">
+            <button id="aoi-draw-btn" type="button">Draw your own area</button>
+            <button id="aoi-finish-btn" type="button" hidden>Finish drawing</button>
+            <button id="aoi-cancel-btn" type="button" hidden>Cancel</button>
+          </div>
+
+          <div id="aoi-summary" class="hint">No area selected. Pick a ward, or draw your own.</div>
+          <div class="button-row">
+            <button id="aoi-clear-btn" type="button" hidden>Clear area</button>
+          </div>
+        </section>
+
+        <section id="scene-search-section" class="locked">
+          <h2><span class="step-num">4</span>Imagery scene</h2>
           <div class="scene-date-row">
             <input id="scene-date-start" type="date" aria-label="Search from date" />
             <input id="scene-date-end" type="date" aria-label="Search to date" />
@@ -35,67 +75,24 @@
           <label for="scene-max-cloud">Max cloud cover (%)</label>
           <input id="scene-max-cloud" type="number" value="30" min="0" max="100" />
           <div class="button-row">
-            <button id="search-scenes-btn" type="button">Search scenes</button>
-          </div>
-          <div class="hint">
-            Browse real satellite passes over Lagos for the active layer and pick one — applies to
-            Extreme Heat, Coastal Flooding, and Drought (leave unsearched for the most recent
-            available). Has no effect on the Coastal Erosion reference layers, which aren't
-            anchored to a single scene.
+            <button id="search-scenes-btn" type="button" disabled>Search scenes</button>
           </div>
           <div id="scene-search-status" class="hint"></div>
           <ul id="scene-list"></ul>
         </section>
 
-        <section id="layer-list-section">
-          <h2>Layers</h2>
-          <ul id="layer-list"></ul>
-        </section>
-
-        <section id="boundaries-section">
-          <h2>Boundaries</h2>
-          <label for="boundary-state-select">State</label>
-          <select id="boundary-state-select" disabled>
-            <option value="lagos">Lagos</option>
-          </select>
-          <label for="boundary-lga-select">Local Government Area</label>
-          <select id="boundary-lga-select">
-            <option value="">Loading LGAs…</option>
-          </select>
-          <label for="boundary-ward-select">Ward</label>
-          <select id="boundary-ward-select" disabled>
-            <option value="">Select an LGA first…</option>
-          </select>
-          <div class="hint">
-            Pick an LGA to see its wards, then pick a ward — the map zooms to it and it becomes
-            your area of interest for analysis.
-          </div>
-        </section>
-
-        <section id="aoi-section">
-          <h2>Area of Interest</h2>
-          <div id="aoi-summary" class="hint">No area selected. Click a boundary, or draw your own.</div>
-          <div class="button-row">
-            <button id="aoi-draw-btn" type="button">Draw AOI</button>
-            <button id="aoi-finish-btn" type="button" hidden>Finish drawing</button>
-            <button id="aoi-cancel-btn" type="button" hidden>Cancel</button>
-            <button id="aoi-clear-btn" type="button" hidden>Clear</button>
-          </div>
+        <section id="analysis-section">
+          <h2><span class="step-num">5</span>Analyse</h2>
           <div class="button-row">
             <button id="aoi-run-analysis-btn" type="button" disabled>Run analysis on active layer</button>
           </div>
+          <div id="analysis-hint" class="hint">Needs an active layer and an area of interest.</div>
           <div id="aoi-result"></div>
         </section>
 
         <section id="identify-section">
           <h2>Identify</h2>
           <div id="identify-result">Click the map to inspect a location.</div>
-        </section>
-
-        <section>
-          <label for="search-input">Search location / LGA</label>
-          <input id="search-input" type="text" placeholder="e.g. Ikeja" />
-          <ul id="search-results"></ul>
         </section>
       </aside>
       <main id="map"></main>

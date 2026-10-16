@@ -193,12 +193,20 @@ def search_imagery(
     collections: list[str],
     datetime_range: str | None = None,
     max_cloud_cover: float | None = 20.0,
-    limit: int = 12,
+    limit: int = 7,
+    require_full_cover: bool = False,
 ) -> list:
     """Search one or more Planetary Computer collections for the raw imagery
     browser (GET /api/v1/imagery/search) — distinct from find_best_scene,
-    which picks a single scene for a hazard recipe. This returns everything
-    matching so the caller/frontend can list and choose."""
+    which picks a single scene for a hazard recipe.
+
+    Returns the `limit` best scenes: lowest cloud cover first (newest first
+    among ties). With `require_full_cover`, only scenes whose footprint
+    actually covers the whole `bbox` are kept — a plain STAC bbox search
+    returns anything that merely *touches* it, and a scene covering just a
+    corner of the study area gives empty/partial statistics. Because that
+    filter runs after the search, a larger candidate pool is fetched first
+    so there are still `limit` scenes left once it's applied."""
     query = {}
     if max_cloud_cover is not None and any(
         c in {"sentinel-2-l2a", "landsat-c2-l2"} for c in collections
@@ -218,13 +226,42 @@ def search_imagery(
             bbox=bbox or LAGOS_BBOX,
             datetime=datetime_range,
             query=query or None,
-            limit=limit,
+            limit=_CANDIDATE_POOL,
+            max_items=_CANDIDATE_POOL,
             sortby=[{"field": "properties.eo:cloud_cover", "direction": "asc"}],
         )
         items.extend(search.items())
-    if len(by_catalog) > 1:
-        items.sort(key=lambda it: it.properties.get("eo:cloud_cover", 100))
+
+    if require_full_cover and bbox:
+        items = [it for it in items if _covers_bbox(it, bbox)]
+
+    items.sort(
+        key=lambda it: (
+            it.properties.get("eo:cloud_cover", 100),
+            -(it.datetime.timestamp() if it.datetime else 0),
+        )
+    )
     return items[:limit]
+
+
+# How many least-cloudy candidates to pull before the coverage filter and the
+# final top-N cut. Generous because many candidates can be neighbouring tiles
+# that only clip the study area.
+_CANDIDATE_POOL = 150
+
+
+def _covers_bbox(item, bbox: list[float], min_fraction: float = 0.995) -> bool:
+    """True if the scene footprint covers (essentially all of) the bbox. The
+    small tolerance absorbs footprint-edge rounding for areas that sit right
+    at a scene edge."""
+    from shapely.geometry import box, shape
+
+    if not item.geometry:
+        return False
+    target = box(*bbox)
+    if target.area == 0:
+        return shape(item.geometry).intersects(target)
+    return shape(item.geometry).intersection(target).area / target.area >= min_fraction
 
 
 def item_to_dict(item) -> dict:

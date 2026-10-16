@@ -16,9 +16,14 @@ def search_imagery(
         None, alias="datetime", description="ISO8601 interval, e.g. 2025-01-01/2025-12-31"
     ),
     max_cloud_cover: float = Query(20.0, ge=0, le=100),
-    limit: int = Query(12, le=50),
+    limit: int = Query(7, ge=1, le=50, description="How many of the best (clearest) scenes to return"),
 ):
-    """Search Planetary Computer's open STAC catalogue for scenes over the AOI.
+    """Search the STAC catalogue for the `limit` clearest scenes over the AOI.
+
+    When a `bbox` is given (the selected study area), only scenes whose
+    footprint fully covers it are returned. Without one (whole-of-Lagos
+    browsing) no single scene can cover everything, so scenes that merely
+    intersect Lagos are listed.
 
     This is the 'open planetary' imagery source referenced in the
     architecture doc — free Sentinel-2/Landsat COGs, no API key required.
@@ -31,6 +36,7 @@ def search_imagery(
             datetime_range=datetime_range,
             max_cloud_cover=max_cloud_cover,
             limit=limit,
+            require_full_cover=bbox_list is not None,
         )
     except Exception as exc:  # noqa: BLE001 — surface STAC errors plainly to the client
         raise HTTPException(status_code=502, detail=f"STAC search failed: {exc}") from exc

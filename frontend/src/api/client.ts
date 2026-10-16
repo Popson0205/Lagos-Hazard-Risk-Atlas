@@ -113,7 +113,7 @@ export const api = {
       collection: params.collection,
       datetime: `${params.startDate}/${params.endDate}`,
       max_cloud_cover: String(params.maxCloudCover ?? 30),
-      limit: "20",
+      limit: "7",
     });
     if (params.bbox) qs.set("bbox", params.bbox.join(","));
     return getJSON<STACItem[]>(`${BASE}/imagery/search?${qs.toString()}`);

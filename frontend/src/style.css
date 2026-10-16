@@ -309,3 +309,19 @@ select, input {
   font-size: 11px;
   box-shadow: none;
 }
+
+/* --- Numbered workflow steps --- */
+#sidebar h2 { display: flex; align-items: center; gap: 8px; }
+.step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; letter-spacing: 0;
+}
+#sidebar section { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+#sidebar section:last-of-type { border-bottom: none; }
+#sidebar section label:not(:first-of-type) { margin-top: 8px; }
+.or-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+.or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+/* Step 4 is dimmed until a live (satellite-scene) layer is switched on */
+section.locked > :not(h2):not(#scene-search-status) { opacity: 0.45; pointer-events: none; }
+section.locked .step-num { background: #374151; }
