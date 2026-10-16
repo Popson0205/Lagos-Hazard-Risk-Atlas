@@ -9,10 +9,15 @@ import { BoundaryManager, type AoiSelection } from "./map/boundaries";
 import { PolygonDrawTool, type DrawnAoi } from "./map/draw";
 import { api } from "./api/client";
 import type { HazardTheme, Scenario, Layer } from "./types";
+import {
+  initUI, toast, renderState, showSkeleton, spinnerHtml, setBusy, buildLayerCard, markHazardAvailability,
+  modalFocus, refreshSummaries, setActionContext, escapeHtml, areaChartHtml,
+} from "./ui";
 
 type Aoi = AoiSelection | DrawnAoi;
 
 async function main() {
+  initUI();
   const { map, basemaps } = createMap("map");
   addNorthArrow(map);
   addScaleBar(map);
@@ -62,9 +67,12 @@ async function main() {
   // --- Analysis result popup (replaces dumping raw figures in the sidebar) ---
   function openAnalysisModal(): void {
     analysisModalOverlay.hidden = false;
+    modalFocus.open(analysisModalOverlay);
   }
   function closeAnalysisModal(): void {
+    if (analysisModalOverlay.hidden) return;
     analysisModalOverlay.hidden = true;
+    modalFocus.close();
   }
   analysisModalClose.addEventListener("click", closeAnalysisModal);
   analysisModalOverlay.addEventListener("click", (e) => {
@@ -343,11 +351,12 @@ async function main() {
     }
 
     analysisModalBody.innerHTML = `
-      <p class="modal-eyebrow" id="analysis-modal-title">${aoiInfo.eyebrow}${hazardName ? ` · ${hazardName}` : ""}</p>
-      <h2 class="modal-title">${aoiInfo.title}</h2>
-      <p class="modal-subtitle">${cleanedName}</p>
+      <p class="modal-eyebrow">${escapeHtml(aoiInfo.eyebrow)}${hazardName ? ` · ${escapeHtml(hazardName)}` : ""}</p>
+      <h2 class="modal-title" id="analysis-modal-title">${escapeHtml(aoiInfo.title)}</h2>
+      <p class="modal-subtitle">${escapeHtml(cleanedName)}</p>
       ${imageryBadge}
       <div class="modal-summary">${summaryHtml}</div>
+      ${figureAreaUnit ? areaChartHtml(figures, figureAreaUnit) : ""}
       ${
         figureRows
           ? `<div class="modal-figures">
@@ -359,6 +368,10 @@ async function main() {
           : ""
       }
       ${notes.length ? `<p class="modal-note">${notes.join(" ")}</p>` : ""}
+      <div class="modal-actions">
+        <button type="button" data-act="print" class="primary">Save as PDF</button>
+        <button type="button" data-act="copy">Copy summary</button>
+      </div>
     `;
     openAnalysisModal();
   }
@@ -389,6 +402,8 @@ async function main() {
   function updateAnalysisState(): void {
     const hasLayer = !!layers.getTopActiveLayerId();
     runAnalysisBtn.disabled = !hasLayer || !currentAoi;
+    setActionContext(hasLayer ? layers.getTopActiveDetail()?.name : null, currentAoi ? (currentAoi.source === "drawn" ? "your drawn area" : currentAoi.name) : null);
+    refreshSummaries();
     analysisHintEl.hidden = hasLayer && !!currentAoi;
     analysisHintEl.textContent = !hasLayer && !currentAoi
       ? "Needs an active layer (step 2) and an area of interest (step 3)."
@@ -660,7 +675,8 @@ async function main() {
     // request a plain numeric zonal-stats summary instead.
     const operation = activeDetail?.layer_type === "vector" ? "area_by_class" : "zonal_stats";
     runAnalysisBtn.disabled = true;
-    aoiResultEl.textContent = "Running analysis...";
+    setBusy(runAnalysisBtn, true);
+    aoiResultEl.innerHTML = spinnerHtml("Calculating. This usually takes under 15 seconds.");
     // Detach raster layers for the duration of the request, which aborts
     // their in-flight tile loads. TiTiler serves requests one at a time,
     // and selecting a ward zooms to z16 and rebuilds every raster layer to
@@ -668,6 +684,7 @@ async function main() {
     // behind dozens of tiles and times out, even though it completes in
     // seconds against an idle tile server. See map/layerControl.ts.
     const restoreTiles = layers.suspendRasterTiles();
+    const dismissNote = toast("Map imagery pauses while we calculate and returns on its own.", "info", 0);
     try {
       // Prefer the scene already resolved for the layer currently on the
       // map (activeDetail.scene_id) over re-resolving "most recent" from
@@ -736,16 +753,25 @@ async function main() {
       }
 
       aoiResultEl.innerHTML = "";
+      toast("Analysis ready.", "success", 2500);
       const viewBtn = document.createElement("button");
       viewBtn.type = "button";
       viewBtn.className = "link-btn";
-      viewBtn.textContent = "Analysis complete — view result again";
+      viewBtn.textContent = "\u2713 Analysis ready. View the result again";
       viewBtn.addEventListener("click", () => openAnalysisModal());
       aoiResultEl.appendChild(viewBtn);
     } catch (err) {
-      aoiResultEl.textContent = `Analysis unavailable: ${(err as Error).message}`;
+      renderState(
+        aoiResultEl,
+        "error",
+        "The analysis didn't finish",
+        `${(err as Error).message}. The map server may be busy. Wait a few seconds, then try again.`,
+        { label: "Try again", run: () => runAnalysisBtn.click() }
+      );
     } finally {
       restoreTiles();
+      dismissNote();
+      setBusy(runAnalysisBtn, false);
       updateAnalysisState();
     }
   });
@@ -757,35 +783,55 @@ async function main() {
   try {
     [hazards, scenarios] = await Promise.all([api.listHazards(), api.listScenarios()]);
   } catch (err) {
-    layerListEl.innerHTML = `<li style="color:#f87171">Could not reach the API (${(err as Error).message}). Is the backend running?</li>`;
+    renderState(layerListEl, "error", "Can't reach the atlas server", `${(err as Error).message}. Check your connection, then reload the page.`, {
+      label: "Reload",
+      run: () => window.location.reload(),
+    });
     return;
   }
 
   hazardSelect.innerHTML = hazards
-    .map((h) => `<option value="${h.id}">${h.name}</option>`)
+    .map((h) => `<option value="${escapeHtml(h.id)}">${escapeHtml(h.name)}</option>`)
     .join("");
   scenarioSelect.innerHTML =
     `<option value="">All scenarios</option>` +
-    scenarios.map((s) => `<option value="${s.id}">${s.label}</option>`).join("");
+    scenarios.map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.label)}</option>`).join("");
 
   async function refreshLayerList() {
     const hazard = hazardSelect.value || undefined;
     const scenario = scenarioSelect.value || undefined;
-    const layerCatalogue: Layer[] = await api.listLayers({ hazard, scenario });
+    showSkeleton(layerListEl, 2);
+    let layerCatalogue: Layer[];
+    try {
+      layerCatalogue = await api.listLayers({ hazard, scenario });
+    } catch (err) {
+      renderState(layerListEl, "error", "Couldn't load map layers", (err as Error).message, {
+        label: "Try again",
+        run: () => void refreshLayerList(),
+      });
+      return;
+    }
 
     layerListEl.innerHTML = "";
     if (!layerCatalogue.length) {
-      layerListEl.innerHTML = '<li style="color:#6b7280">No published layers for this selection yet.</li>';
+      renderState(
+        layerListEl,
+        "empty",
+        "No map layers for this hazard yet",
+        "This theme is still being prepared. Choose another hazard in step 1."
+      );
+      refreshSummaries();
       return;
     }
 
     for (const layer of layerCatalogue) {
-      const li = document.createElement("li");
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = layers.isActive(layer.id);
+      const card = buildLayerCard(layer, layers.isActive(layer.id), layers.getOpacity(layer.id), (v) =>
+        layers.setOpacity(layer.id, v)
+      );
+      const checkbox = card.checkbox;
       checkbox.addEventListener("change", async () => {
         checkbox.disabled = true;
+        card.setLoading(true);
         // A pinned scene_id is only meaningful for the collection it was
         // searched against — toggling the layer selection at all resets it,
         // so a Sentinel-2 scene picked for Coastal Flooding can't get sent
@@ -798,19 +844,18 @@ async function main() {
           await layers.toggle(layer.id);
         } catch (err) {
           checkbox.checked = false;
-          alert((err as Error).message);
+          toast(`Couldn't load "${layer.name}". ${(err as Error).message}`, "error", 7000);
         } finally {
           checkbox.disabled = false;
+          card.setLoading(false);
+          card.sync();
           updateAnalysisState();
           updateSceneSection();
         }
       });
-      const label = document.createElement("span");
-      label.textContent = `${layer.name} (${layer.layer_type})`;
-      li.appendChild(checkbox);
-      li.appendChild(label);
-      layerListEl.appendChild(li);
+      layerListEl.appendChild(card.li);
     }
+    refreshSummaries();
   }
 
   updateAnalysisState();
@@ -818,6 +863,18 @@ async function main() {
   hazardSelect.addEventListener("change", refreshLayerList);
   scenarioSelect.addEventListener("change", refreshLayerList);
   await refreshLayerList();
+  void markHazardAvailability(hazardSelect, hazards, async (id) => (await api.listLayers({ hazard: id })).length).then(
+    async (available) => {
+      if (available.size && !available.has(hazardSelect.value)) {
+        const first = hazards.find((h) => available.has(h.id));
+        if (first) {
+          hazardSelect.value = first.id;
+          await refreshLayerList();
+        }
+      }
+      refreshSummaries();
+    }
+  );
 
   // --- Search / zoom-to-administrative-area (now covers state + all LGAs + wards) ---
   let searchTimeout: number | undefined;
@@ -829,8 +886,18 @@ async function main() {
       return;
     }
     searchTimeout = window.setTimeout(async () => {
-      const results = await api.search(q);
+      let results: Awaited<ReturnType<typeof api.search>>;
+      try {
+        results = await api.search(q);
+      } catch {
+        searchResultsEl.innerHTML = '<li class="state-inline">Search isn\'t available right now. Use the LGA and ward lists instead.</li>';
+        return;
+      }
       searchResultsEl.innerHTML = "";
+      if (!results.length) {
+        searchResultsEl.innerHTML = '<li class="state-inline">No match. Try a ward or LGA name.</li>';
+        return;
+      }
       for (const r of results) {
         const li = document.createElement("li");
         li.textContent = r.label;

@@ -25,6 +25,21 @@ export class LayerManager {
    * grid — see setAoiMask()'s docstring. */
   private aoiGeometry: GeoJSON.Geometry | null = null;
   onLegendChange: (detail: LayerDetail | null) => void = () => {};
+  /** Per-layer opacity chosen with the sidebar slider (default 0.75). Kept
+   * here so it survives the layer being rebuilt for a new AOI or scene. */
+  private opacities = new Map<string, number>();
+
+  getOpacity(layerId: string): number {
+    return this.opacities.get(layerId) ?? 0.75;
+  }
+
+  setOpacity(layerId: string, value: number): void {
+    this.opacities.set(layerId, value);
+    const layer = this.active.get(layerId) as unknown as { setOpacity?: (v: number) => void; setStyle?: (s: object) => void } | undefined;
+    if (!layer) return;
+    if (typeof layer.setOpacity === "function") layer.setOpacity(value);
+    else if (typeof layer.setStyle === "function") layer.setStyle({ fillOpacity: value * 0.6, opacity: value });
+  }
 
   constructor(map: L.Map) {
     this.map = map;
@@ -73,7 +88,7 @@ export class LayerManager {
     let leafletLayer: L.Layer;
     if (detail.layer_type === "raster" && detail.tile_url) {
       const maxNativeZoom = detail.style?.max_native_zoom as number | undefined;
-      const tileOptions = { opacity: 0.75, ...(maxNativeZoom ? { maxNativeZoom } : {}) };
+      const tileOptions = { opacity: this.getOpacity(layerId), ...(maxNativeZoom ? { maxNativeZoom } : {}) };
       // Clip to the selected AOI when there is one — an xyz_url layer (e.g.
       // JRC Global Surface Water) is served from a third-party host without
       // our CORS setup in mind, so masking (which draws the fetched image

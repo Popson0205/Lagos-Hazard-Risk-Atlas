@@ -24,6 +24,12 @@ function gradientCss(colormapName: string): string | null {
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
+function unitLabel(unit?: string | null): string {
+  if (!unit) return "";
+  if (unit === "C") return "\u00b0C";
+  return unit;
+}
+
 function fmtValue(n: number): string {
   return Number(n.toFixed(2)).toString();
 }
@@ -62,8 +68,18 @@ export function renderLegend(container: HTMLElement, detail: LayerDetail | null)
   title.textContent = detail.name;
   container.appendChild(title);
 
+  const unit = unitLabel(detail.unit);
+  if (unit) {
+    const unitEl = document.createElement("div");
+    unitEl.className = "legend-unit";
+    unitEl.textContent = `Unit: ${unit}`;
+    container.appendChild(unitEl);
+  }
+
   const bar = document.createElement("div");
   bar.className = "legend-bar";
+  bar.setAttribute("role", "img");
+  bar.setAttribute("aria-label", `Colour ramp for ${detail.name}`);
   bar.style.background = gradient;
   container.appendChild(bar);
 
