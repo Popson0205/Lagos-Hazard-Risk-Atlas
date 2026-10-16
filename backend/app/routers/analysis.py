@@ -93,7 +93,11 @@ def _run_vector_analysis(layer: Layer, body: AnalysisRequest, db: Session) -> Zo
 # payload succeeds in ~8s once the tile burst drains. Retrying is therefore
 # the correct response, and doing it server-side (rather than making the
 # user click again) is what turns a flaky button into a reliable one.
-_RETRY_STATUS = {429, 500, 502, 503, 504}
+# 500 is deliberately NOT here: a 500 from TiTiler is a failure computing the
+# statistics (bad raster read, expression error, ...), which retrying won't
+# fix — and retrying it used to hide the real error behind the generic
+# "tile server is busy" message below.
+_RETRY_STATUS = {429, 502, 503, 504}
 _RETRY_BACKOFF_SECONDS = (3, 9)  # two retries; ~12s of waiting worst case
 
 
@@ -127,7 +131,7 @@ def _post_statistics_with_retry(url: str, params, feature: dict) -> httpx.Respon
             # A non-retryable 4xx — a genuinely bad request, so surface it as-is.
             raise HTTPException(
                 status_code=502,
-                detail=f"TiTiler rejected the statistics request "
+                detail=f"Statistics failed in the tile engine "
                 f"({exc.response.status_code}): {exc.response.text[:300]}",
             ) from exc
         return resp
