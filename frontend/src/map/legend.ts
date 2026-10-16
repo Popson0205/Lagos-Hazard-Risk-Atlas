@@ -28,8 +28,8 @@ function fmtValue(n: number): string {
   return Number(n.toFixed(2)).toString();
 }
 
-/** Legend = colour ramp + min and max value, nothing else (no title, unit,
- * date or notes). The min/max are the values calculated over the current
+/** Legend = layer name + colour ramp + min and max value, nothing else (no
+ * unit, date or notes). The min/max are the values calculated over the current
  * area (detail.value_range, set by LayerManager from /layers/{id}/range), so
  * the labels always match what the map is actually showing. */
 export function renderLegend(container: HTMLElement, detail: LayerDetail | null): void {
@@ -56,6 +56,11 @@ export function renderLegend(container: HTMLElement, detail: LayerDetail | null)
     }
   }
   if (!gradient) return;
+
+  const title = document.createElement("div");
+  title.className = "legend-title";
+  title.textContent = detail.name;
+  container.appendChild(title);
 
   const bar = document.createElement("div");
   bar.className = "legend-bar";
