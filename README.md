@@ -197,7 +197,14 @@ the first tile request after a gap will be slow while it wakes back up.
 
 </details>
 
-## Imagery source (Earth Search)
+## Imagery sources
+
+**Landsat (extreme-heat LST) comes from Microsoft Planetary Computer**, signed at read time
+(`stac_client.signed_item`, applied in `app/tiler.py`); **Sentinel-2 comes from Earth Search**
+as described below. Which collections use Planetary Computer is
+`stac_client.PLANETARY_COMPUTER_COLLECTIONS`.
+
+### Earth Search (Sentinel-2)
 
 No API key or signing required. `stac_client.py` uses `pystac-client` against
 `https://earth-search.aws.element84.com/v1` (AWS Open Data, run by Element 84) — Earth Search's COGs are

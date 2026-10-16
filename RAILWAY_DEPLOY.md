@@ -29,6 +29,7 @@ service, no TiTiler image, and no `TITILER_BASE_URL` to wire up.
    psql "$DATABASE_URL" -f backend/app/fix_earth_search_switch.sql
    psql "$DATABASE_URL" -f backend/app/fix_max_native_zoom.sql
    psql "$DATABASE_URL" -f backend/app/fix_source_attribution.sql
+   psql "$DATABASE_URL" -f backend/app/fix_landsat_planetary_computer.sql
    ```
    (`db_init_correct.sql`, not `db_init.sql` — the latter is an older, abandoned schema.)
    No new SQL is needed for the TiTiler merge: the stored recipes keep their positional
@@ -56,6 +57,16 @@ service, no TiTiler image, and no `TITILER_BASE_URL` to wire up.
    - `https://<your-domain>/api/v1/health` → `{"status":"ok"}`
    - `https://<your-domain>/titiler/healthz` → `{"ping":"pong!"}`
    - `https://<your-domain>/titiler/docs` → TiTiler's own OpenAPI page
+
+### Imagery sources (no credentials needed)
+
+- **Sentinel-2** (coastal flooding NDWI, drought NDVI): Earth Search (`STAC_API_URL`), public S3 COGs.
+- **Landsat** (extreme-heat LST): Microsoft Planetary Computer. Its asset URLs need a
+  short-lived SAS token, which the backend fetches from
+  `planetarycomputer.microsoft.com/api/sas/v1/...` and attaches on every read (no API key,
+  free). The service therefore needs outbound access to that host, which Railway allows by
+  default. Earth Search's own Landsat links point at a requester-pays AWS bucket, which is why
+  it isn't used for this layer.
 
 ## 2. Already running the old two-service setup?
 

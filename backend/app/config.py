@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # same collection ids (landsat-c2-l2, sentinel-2-l2a) but Sentinel-2's
     # asset names differ — see data/catalogue/hazard_layers.json.
     stac_api_url: str = "https://earth-search.aws.element84.com/v1"
+    # Landsat comes from Microsoft's Planetary Computer rather than Earth
+    # Search: Earth Search points Landsat assets at s3://usgs-landsat, a
+    # requester-pays bucket that needs (billed) AWS credentials, whereas
+    # Planetary Computer serves the same Collection 2 Level-2 scenes from
+    # free public Azure blobs, with a short-lived SAS token. See
+    # services/stac_client.PLANETARY_COMPUTER_COLLECTIONS.
+    planetary_computer_stac_url: str = "https://planetarycomputer.microsoft.com/api/stac/v1"
     storage_backend: str = "local"
     storage_local_path: str = "/data/cogs"
     cors_origins: str = "http://localhost:5173"

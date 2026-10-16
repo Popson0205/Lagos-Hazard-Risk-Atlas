@@ -65,6 +65,11 @@ COPY --from=frontend-build /frontend/dist ./static
 # tile is a range-read against a COG in S3 — cost is dominated by HTTP round
 # trips, not CPU. All overridable from the Railway Variables tab.
 #
+# Landsat (the extreme-heat / LST layer) comes from Microsoft's Planetary
+# Computer (free Azure blobs + short-lived SAS tokens, signed per read in
+# app/tiler.py) — Earth Search's Landsat points at a requester-pays AWS bucket.
+# No credentials or env vars are needed for either provider.
+#
 # Memory: each uvicorn worker holds its own GDAL block cache and VSI chunk
 # cache, so WEB_CONCURRENCY x (GDAL_CACHEMAX + VSI_CACHE_SIZE) must stay well
 # under the instance's memory (2 x (200MB + 256MB) ~= 0.9GB here).

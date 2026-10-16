@@ -20,20 +20,23 @@
 -- below — but running this is safe either way, and is the only option if
 -- you can't get a shell on the deployed service.
 
-\echo '1/5  expression: positional b1/b2 band refs (rio-tiler parser collision)'
+\echo '1/6  expression: positional b1/b2 band refs (rio-tiler parser collision)'
 \i fix_expression_bug.sql
 
-\echo '2/5  nodata: exclude raw-0 fill pixels from band math'
+\echo '2/6  nodata: exclude raw-0 fill pixels from band math'
 \i fix_nodata_bug.sql
 
-\echo '3/5  assets: Earth Search common band names'
+\echo '3/6  assets: Earth Search common band names'
 \i fix_earth_search_switch.sql
 
-\echo '4/5  max_native_zoom: cap the tile pyramid at sensor resolution'
+\echo '4/6  max_native_zoom: cap the tile pyramid at sensor resolution'
 \i fix_max_native_zoom.sql
 
-\echo '5/5  source: correct provider attribution'
+\echo '5/6  source: correct provider attribution'
 \i fix_source_attribution.sql
+
+\echo '6/6  source: Landsat now via Microsoft Planetary Computer'
+\i fix_landsat_planetary_computer.sql
 
 -- Final verification — every live layer should have a positional expression,
 -- an explicit nodata, Earth Search asset names, and a native zoom cap.

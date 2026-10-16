@@ -5,7 +5,7 @@
     "scenario_id": "baseline",
     "name": "Land Surface Temperature (Baseline)",
     "layer_type": "raster",
-    "source": "Landsat Collection 2 Level-2 (via Earth Search / AWS Open Data)",
+    "source": "Landsat Collection 2 Level-2 (via Microsoft Planetary Computer)",
     "unit": "C",
     "resolution": "30m",
     "methodology": "LST derived from Landsat thermal band, atmospherically corrected surface temperature product. Computed live per request from the least-cloudy Landsat scene over Lagos in the last 90 days (see backend/app/services/hazard_recipes.py) — not a fixed historical baseline.",

@@ -53,6 +53,17 @@ from app.config import get_settings
 settings = get_settings()
 
 _catalog: Client | None = None
+_pc_catalog: Client | None = None
+
+# Collections served from Microsoft's Planetary Computer instead of Earth
+# Search. Same collection id and asset names ("lwir11" etc.) as before — only
+# the catalogue and URL signing differ. Everything else stays on Earth Search.
+PLANETARY_COMPUTER_COLLECTIONS = frozenset({"landsat-c2-l2"})
+
+# planetary_computer.sign() keeps its own token cache but isn't built for a
+# burst of identical first-time token requests; one lock makes the first
+# request fetch the token and the rest reuse it.
+_sign_lock = threading.Lock()
 
 # Short-lived cache for find_best_scene()'s own search — searching Earth
 # Search's catalogue (list + sort candidate items) is the single slowest
@@ -82,13 +93,39 @@ def _cached_or_call(key: tuple, fn):
 LAGOS_BBOX: list[float] = [2.7, 6.35, 4.3, 6.7]
 
 
-def get_catalog() -> Client:
-    global _catalog
+def get_catalog(collection: str | None = None) -> Client:
+    """The STAC client for a collection: Planetary Computer for Landsat,
+    Earth Search for everything else (including collection=None)."""
+    global _catalog, _pc_catalog
+    if collection in PLANETARY_COMPUTER_COLLECTIONS:
+        if _pc_catalog is None:
+            # No `modifier`: items are cached for a long time, but PC's SAS
+            # tokens expire within the hour, so signing happens at read time
+            # (signed_item) rather than when the item is fetched.
+            _pc_catalog = Client.open(settings.planetary_computer_stac_url)
+        return _pc_catalog
     if _catalog is None:
         # No `modifier` needed — Earth Search's assets are public S3 COGs,
         # unlike Planetary Computer's short-lived SAS-token-signed URLs.
         _catalog = Client.open(settings.stac_api_url)
     return _catalog
+
+
+def signed_item(item):
+    """A copy of the item that is safe to read assets from right now.
+
+    Earth Search items need nothing. Planetary Computer items get their asset
+    hrefs signed with a short-lived SAS token (planetary_computer caches the
+    token per storage container and refreshes it before expiry, so after the
+    first call this is cheap). Always signs a *copy*: the cached item stays
+    unsigned, so a token that expires can never get baked into the cache.
+    """
+    if item.collection_id not in PLANETARY_COMPUTER_COLLECTIONS:
+        return item
+    import planetary_computer
+
+    with _sign_lock:
+        return planetary_computer.sign(item)
 
 
 def search_scenes(
@@ -107,7 +144,7 @@ def search_scenes(
     (asset key -> already-signed href), ready to feed to TiTiler or a
     processing job.
     """
-    catalog = get_catalog()
+    catalog = get_catalog(collection)
     query = {}
     if max_cloud_cover is not None and collection in {"sentinel-2-l2a", "landsat-c2-l2"}:
         query["eo:cloud_cover"] = {"lt": max_cloud_cover}
@@ -162,22 +199,32 @@ def search_imagery(
     browser (GET /api/v1/imagery/search) — distinct from find_best_scene,
     which picks a single scene for a hazard recipe. This returns everything
     matching so the caller/frontend can list and choose."""
-    catalog = get_catalog()
     query = {}
     if max_cloud_cover is not None and any(
         c in {"sentinel-2-l2a", "landsat-c2-l2"} for c in collections
     ):
         query["eo:cloud_cover"] = {"lt": max_cloud_cover}
 
-    search = catalog.search(
-        collections=collections,
-        bbox=bbox or LAGOS_BBOX,
-        datetime=datetime_range,
-        query=query or None,
-        limit=limit,
-        sortby=[{"field": "properties.eo:cloud_cover", "direction": "asc"}],
-    )
-    return list(search.items())
+    # Collections can live in different catalogues (Landsat is on Planetary
+    # Computer, the rest on Earth Search): one search per catalogue, merged.
+    by_catalog: dict[bool, list[str]] = {}
+    for c in collections:
+        by_catalog.setdefault(c in PLANETARY_COMPUTER_COLLECTIONS, []).append(c)
+
+    items: list = []
+    for is_pc, cols in by_catalog.items():
+        search = get_catalog(cols[0] if is_pc else None).search(
+            collections=cols,
+            bbox=bbox or LAGOS_BBOX,
+            datetime=datetime_range,
+            query=query or None,
+            limit=limit,
+            sortby=[{"field": "properties.eo:cloud_cover", "direction": "asc"}],
+        )
+        items.extend(search.items())
+    if len(by_catalog) > 1:
+        items.sort(key=lambda it: it.properties.get("eo:cloud_cover", 100))
+    return items[:limit]
 
 
 def item_to_dict(item) -> dict:
@@ -202,7 +249,7 @@ def get_signed_asset_url(collection: str, item_id: str, asset: str) -> str:
             f"Asset '{asset}' not found on item '{item_id}' "
             f"(available: {sorted(item.assets)})"
         )
-    return item.assets[asset].href
+    return signed_item(item).assets[asset].href
 
 
 class NoScenesFoundError(RuntimeError):
@@ -229,7 +276,7 @@ def get_item_by_id(collection: str, item_id: str):
         cached = _scene_cache.get(cache_key)
         if cached is not None:
             return cached[1]
-        catalog = get_catalog()
+        catalog = get_catalog(collection)
         item = catalog.get_collection(collection).get_item(item_id)
         if item is None:
             raise NoScenesFoundError(f"Item '{item_id}' not found in collection '{collection}'")
@@ -301,7 +348,7 @@ def find_best_scene(
     )
 
     def _search():
-        catalog = get_catalog()
+        catalog = get_catalog(collection)
         query = {}
         if max_cloud_cover is not None and collection in {"sentinel-2-l2a", "landsat-c2-l2"}:
             query["eo:cloud_cover"] = {"lt": max_cloud_cover}

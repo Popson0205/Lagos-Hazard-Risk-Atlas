@@ -44,7 +44,10 @@ class InProcessSTACReader(STACReader):
         if self.item is None and self.input and self.input.startswith(STAC_ITEM_SCHEME):
             collection, _, item_id = self.input[len(STAC_ITEM_SCHEME):].partition("/")
             try:
-                self.item = stac_client.get_item_by_id(collection, item_id)
+                # signed_item(): Planetary Computer (Landsat) asset URLs need
+                # a short-lived SAS token, attached per read to a copy so the
+                # cached item never holds an expired one.
+                self.item = stac_client.signed_item(stac_client.get_item_by_id(collection, item_id))
             except stac_client.NoScenesFoundError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             except Exception as exc:  # noqa: BLE001 — STAC API/network failure on a cache miss
