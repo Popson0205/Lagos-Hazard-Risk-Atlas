@@ -1,7 +1,7 @@
 import "./style.css";
 import L from "leaflet";
 import { createMap } from "./map/mapInit";
-import { addNorthArrow, addScaleBar, addBasemapSwitcher } from "./map/mapControls";
+import { addNorthArrow, addScaleBar, addBasemapSwitcher, addLegendControl } from "./map/mapControls";
 import { LayerManager } from "./map/layerControl";
 import { renderLegend } from "./map/legend";
 import { setupIdentify } from "./map/identify";
@@ -17,6 +17,7 @@ async function main() {
   addNorthArrow(map);
   addScaleBar(map);
   addBasemapSwitcher(map, basemaps);
+  const legendEl = addLegendControl(map);
   const layers = new LayerManager(map);
   const boundaryManager = new BoundaryManager(map);
   const drawTool = new PolygonDrawTool(map);
@@ -30,7 +31,6 @@ async function main() {
   const sceneSearchStatusEl = document.getElementById("scene-search-status") as HTMLDivElement;
   const sceneListEl = document.getElementById("scene-list") as HTMLUListElement;
   const layerListEl = document.getElementById("layer-list") as HTMLUListElement;
-  const legendEl = document.getElementById("legend") as HTMLDivElement;
   const identifyResultEl = document.getElementById("identify-result") as HTMLDivElement;
   const searchInput = document.getElementById("search-input") as HTMLInputElement;
   const searchResultsEl = document.getElementById("search-results") as HTMLUListElement;
@@ -49,7 +49,12 @@ async function main() {
   const analysisModalBody = document.getElementById("analysis-modal-body") as HTMLDivElement;
   const analysisModalClose = document.getElementById("analysis-modal-close") as HTMLButtonElement;
 
-  layers.onLegendChange = (detail) => renderLegend(legendEl, detail);
+  layers.onLegendChange = (detail) => {
+    renderLegend(legendEl, detail);
+    // Collapse the floating map legend to nothing when no layer is active,
+    // rather than leaving an empty card floating over the map.
+    legendEl.classList.toggle("has-content", detail !== null);
+  };
   setupIdentify(map, layers, identifyResultEl);
 
   // --- Analysis result popup (replaces dumping raw figures in the sidebar) ---

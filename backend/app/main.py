@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
+from app.tiler import create_tiler_app
 from app.routers import hazards, layers, features, scenarios, search, analysis, health, boundaries, imagery
 
 settings = get_settings()
@@ -35,10 +36,15 @@ app.include_router(features.router, prefix=settings.api_v1_prefix)
 app.include_router(search.router, prefix=settings.api_v1_prefix)
 app.include_router(analysis.router, prefix=settings.api_v1_prefix)
 app.include_router(boundaries.router, prefix=settings.api_v1_prefix)
-# imagery.router already declares its own "/api/v1/imagery" prefix (it needs
-# to be reachable at a stable path that TiTiler itself fetches — see
-# app/services/stac_client.stac_item_json_url), so no extra prefix here.
+# imagery.router already declares its own "/api/v1/imagery" prefix, so no
+# extra prefix here. (Its /item/...json endpoint is no longer fetched by
+# TiTiler — see app/tiler.py — but stays as a handy way to inspect an item.)
 app.include_router(imagery.router)
+
+# TiTiler runs inside this app (see app/tiler.py) — one deployment serves the
+# API, the raster tiles and the frontend. Like the API routers, this has to be
+# mounted before the "/" static-file mount below.
+app.mount(settings.titiler_mount_path, create_tiler_app(), name="titiler")
 
 # Serve the built frontend (Vite's `dist` output, copied to ./static by the
 # root Dockerfile) for the single-combined-service deploy on Render — see

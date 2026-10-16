@@ -42,14 +42,10 @@ def search_imagery(
 def get_signed_item_json(collection: str, item_id: str):
     """Serve one Planetary Computer STAC item as signed STAC JSON.
 
-    This exists for TiTiler to fetch, not for the frontend: TiTiler's
-    /stac/tiles endpoint takes a `url` it can GET on its own, so instead of
-    handing TiTiler an unsigned Planetary Computer item (whose asset hrefs
-    need a short-lived SAS token) or re-signing on our side and trying to
-    pass a giant signed item as a query param, we host the already-signed
-    item here and give TiTiler *this* URL. See
-    app/services/stac_client.stac_item_json_url / stac_tile_url and
-    routers/layers.py's get_layer().
+    Debug/inspection endpoint. TiTiler used to fetch items from here over
+    HTTP; now that it is embedded in this app (app/tiler.py) it reads the
+    same cached item in-process via a `stac-item://` reference
+    (stac_client.stac_item_ref), so nothing depends on this route.
     """
     try:
         item = stac_client.get_item_by_id(collection, item_id)

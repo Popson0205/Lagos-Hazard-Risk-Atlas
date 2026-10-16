@@ -91,9 +91,7 @@ def get_layer(
                     status_code=502, detail=f"Could not reach Planetary Computer: {exc}"
                 ) from exc
 
-            item_json_url = stac_client.stac_item_json_url(
-                str(request.base_url), stac_recipe["collection"], item.id
-            )
+            item_json_url = stac_client.stac_item_ref(stac_recipe["collection"], item.id)
             tile_url = stac_client.stac_tile_url(
                 item_json_url,
                 assets=stac_recipe["assets"],

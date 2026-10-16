@@ -14,7 +14,7 @@ backend/data/boundaries/   State / LGA / Ward admin boundary GeoJSON (see "Admin
 frontend/   Vite + TypeScript + Leaflet map client
 data/       Layer metadata catalogue (source of truth for what the map can show)
 nginx/      Reverse proxy config for the hosted deployment
-docker-compose.yml   Local/production orchestration: postgis, titiler, backend, frontend, nginx
+docker-compose.yml   Local orchestration: postgis, backend (TiTiler embedded), frontend, nginx
 ```
 
 ## Admin boundaries (State / LGA / Ward) + area of interest
@@ -52,7 +52,7 @@ pass over the layer's COG for the AOI, a different code path from the PostGIS on
 ## Getting started (local dev)
 
 1. Copy `.env.example` to `.env` and fill in DB credentials (Supabase connection string or local PostGIS).
-2. `docker compose up -d postgis titiler` — bring up the database and raster tile server.
+2. `docker compose up -d postgis` — bring up the database. (TiTiler is embedded in the backend; there is no separate tile server to start.)
 3. Backend:
    ```
    cd backend
@@ -80,7 +80,7 @@ Scaffolded now (this drop):
   choose to cache it
 - Leaflet + TS frontend shell: hazard selector, layer control, legend, identify-on-click, scenario/date
   selector, wired to the backend API client
-- `docker-compose.yml` with postgis (PostGIS-enabled Postgres), titiler, backend, frontend, nginx
+- `docker-compose.yml` with postgis (PostGIS-enabled Postgres), backend (with embedded TiTiler), frontend, nginx
 - A starter `data/catalogue/hazard_layers.json` — the metadata catalogue described in section 6 of the
   architecture doc. This is what both the `/layers` endpoint and the frontend hazard selector read from.
 
@@ -121,12 +121,31 @@ Deliberately left for you to fill in (data/domain-specific, not architecture):
 - Statistics panel logic (`POST /api/v1/analysis`) — stubbed to return a 501 until you decide which
   zonal-statistics operations you want to expose.
 
-## Deploying on Render (combined single service)
+## Deploying on Railway (one service — API, tiles and frontend)
 
 `Dockerfile` at the repo root builds the frontend and bakes its static output into the
-FastAPI backend image, so **one Web Service serves both** — the API under `/api/v1`, and
-the frontend for everything else (see `app/main.py`'s `StaticFiles` mount, and the
-Dockerfile's comments). This is the setup `render.yaml` targets.
+FastAPI backend image, and TiTiler is embedded in the same FastAPI app
+(`backend/app/tiler.py`), so **one service serves everything** — the API under `/api/v1`,
+raster tiles under `/titiler`, and the frontend for everything else (see `app/main.py`).
+`railway.json` at the repo root drives the build/deploy settings. There is no separate
+TiTiler service and no `TITILER_BASE_URL`.
+
+Full step-by-step (database setup, the three env vars, migrating off the old two-service
+layout, and memory sizing for the embedded TiTiler) is in
+**[`RAILWAY_DEPLOY.md`](./RAILWAY_DEPLOY.md)**.
+
+`backend/Dockerfile` and `frontend/Dockerfile` are still there too, used by
+`docker-compose.yml` for local dev (hot reload, separate containers) — they're not part of
+this combined-service path.
+
+`render.yaml` and the Render instructions below are kept for reference (e.g. if you
+need to roll back to Render), but Railway is the current deployment target.
+
+<details>
+<summary>Previous setup: deploying on Render</summary>
+
+> Written for the old two-service layout. TiTiler is now embedded in the web service
+> (`render.yaml` reflects that), so ignore the "TiTiler" paragraph below.
 
 The database is Supabase Postgres rather than a Render-managed database — `render.yaml`
 no longer provisions one, so create the Supabase project yourself first:
@@ -176,9 +195,7 @@ production. Deploy it as a second Render Web Service:
 Both being on the Free plan, the TiTiler service spins down after 15 minutes idle —
 the first tile request after a gap will be slow while it wakes back up.
 
-`backend/Dockerfile` and `frontend/Dockerfile` are still there too, used by
-`docker-compose.yml` for local dev (hot reload, separate containers) — they're not part of
-this combined-service path.
+</details>
 
 ## Imagery source (Earth Search)
 

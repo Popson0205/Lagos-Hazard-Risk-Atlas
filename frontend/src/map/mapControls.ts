@@ -32,6 +32,35 @@ export function addScaleBar(map: L.Map): void {
   L.control.scale({ position: "bottomleft", metric: true, imperial: false, maxWidth: 140 }).addTo(map);
 }
 
+/** Floating legend panel docked to the bottom of the map itself, rather
+ * than living in the sidebar's vertical flow — moved here so it reads
+ * next to what it's describing instead of scrolled away under the layer
+ * list. Bottom-right, so it never collides with the north arrow
+ * (topleft), basemap switcher (topright) or scale bar (bottomleft).
+ *
+ * Returns the content element: callers (main.ts) render into it with
+ * legend.ts's renderLegend() exactly as before — only *where* the legend
+ * lives changed, not how its content is built — and toggle its
+ * `.has-content` class to collapse the panel to nothing when no layer is
+ * active, rather than leaving an empty floating box on screen. */
+export function addLegendControl(map: L.Map): HTMLElement {
+  const LegendControl = L.Control.extend({
+    options: { position: "bottomright" as L.ControlPosition },
+    onAdd(): HTMLElement {
+      const container = L.DomUtil.create("div", "map-control legend-control");
+      L.DomEvent.disableClickPropagation(container);
+      L.DomEvent.disableScrollPropagation(container);
+      return container;
+    },
+  });
+  const control = new LegendControl();
+  control.addTo(map);
+  // onAdd's return value is also what Leaflet keeps as the control's own
+  // container, so re-deriving it via getContainer() keeps one source of
+  // truth instead of stashing a second reference on the closure.
+  return control.getContainer()!;
+}
+
 /** A small basemap switcher matching the app's own panel styling, rather
  * than Leaflet's default white L.control.layers box which would clash with
  * the dark theme. Swaps the active tile layer in place; the basemaps

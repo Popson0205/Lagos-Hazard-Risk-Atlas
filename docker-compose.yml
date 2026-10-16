@@ -12,21 +12,12 @@ services:
     ports:
       - "5432:5432"
 
-  titiler:
-    image: ghcr.io/developmentseed/titiler:latest
-    ports:
-      - "8001:8000"
-    environment:
-      - GDAL_CACHEMAX=200
-      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
-      - CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.TIF,.tiff
-
   backend:
     build: ./backend
     env_file: .env
+    # TiTiler is embedded in this service (app/tiler.py, mounted at /titiler).
     depends_on:
       - postgis
-      - titiler
     volumes:
       - ./backend/app:/app/app
       - cog_cache:/data/cogs

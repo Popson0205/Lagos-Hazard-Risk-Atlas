@@ -52,7 +52,25 @@ select, input {
 .scene-date-row { display: flex; gap: 6px; margin-bottom: 8px; }
 .scene-date-row input { flex: 1; min-width: 0; }
 
-#legend { font-size: 12px; }
+/* Floating legend, docked to the bottom of the map (see mapControls.ts's
+   addLegendControl) instead of living in the sidebar's scroll flow. Empty
+   by default (padding/border only apply once content is rendered) so it
+   doesn't show as an empty box when no layer is active. */
+.legend-control {
+  font-size: 12px;
+  max-width: 280px;
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 14px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.legend-control.has-content {
+  max-height: 42vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  opacity: 1;
+}
 .legend-swatch { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 2px; vertical-align: middle; }
 
 #identify-result { font-size: 13px; color: var(--muted); }

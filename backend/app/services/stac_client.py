@@ -40,6 +40,8 @@ Typical hazard <-> collection mapping (adjust as your methodology firms up):
 """
 from __future__ import annotations
 
+import re
+import threading
 import time
 from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
@@ -63,6 +65,8 @@ _catalog: Client | None = None
 # recent scene" can actually change.
 _SCENE_CACHE_TTL_SECONDS = 300
 _scene_cache: dict[tuple, tuple[float, object]] = {}
+_item_locks: dict[tuple, threading.Lock] = {}
+_item_locks_guard = threading.Lock()
 
 
 def _cached_or_call(key: tuple, fn):
@@ -139,7 +143,7 @@ def titiler_tile_url(cog_url: str, colormap_name: str | None = None, rescale: st
     layer's tiles 404'd while the layer metadata request itself worked
     fine — the same bug already fixed for stac_tile_url below, just never
     applied to this sibling function for stored COGs."""
-    base = f"{settings.titiler_base_url}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={cog_url}"
+    base = f"{settings.titiler_mount_path}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={cog_url}"
     if colormap_name:
         base += f"&colormap_name={colormap_name}"
     if rescale:
@@ -215,12 +219,22 @@ def get_item_by_id(collection: str, item_id: str):
     if cached is not None:
         return cached[1]
 
-    catalog = get_catalog()
-    item = catalog.get_collection(collection).get_item(item_id)
-    if item is None:
-        raise NoScenesFoundError(f"Item '{item_id}' not found in collection '{collection}'")
-    _scene_cache[cache_key] = (time.monotonic(), item)
-    return item
+    # Single-flight: with TiTiler embedded, a burst of tile requests can all
+    # miss at once (the item was primed in a *different* uvicorn worker's
+    # cache). Without this lock each of them would hit the STAC API for the
+    # same item; with it, one fetches and the rest reuse the result.
+    with _item_locks_guard:
+        lock = _item_locks.setdefault(cache_key, threading.Lock())
+    with lock:
+        cached = _scene_cache.get(cache_key)
+        if cached is not None:
+            return cached[1]
+        catalog = get_catalog()
+        item = catalog.get_collection(collection).get_item(item_id)
+        if item is None:
+            raise NoScenesFoundError(f"Item '{item_id}' not found in collection '{collection}'")
+        _scene_cache[cache_key] = (time.monotonic(), item)
+        return item
 
 
 def find_best_scene_with_fallback(
@@ -311,18 +325,53 @@ def find_best_scene(
             return item.properties.get("eo:cloud_cover", 100)
 
         items.sort(key=cloud_cover)
-        return items[0]
+        best = items[0]
+        # Prime get_item_by_id's cache: the embedded TiTiler resolves the
+        # scene by (collection, id) for every tile, and without this the
+        # first burst of tiles would all miss and each re-fetch the item from
+        # the STAC API.
+        _scene_cache[("get_item_by_id", collection, best.id)] = (time.monotonic(), best)
+        return best
 
     return _cached_or_call(cache_key, _search)
 
 
-def stac_item_json_url(request_base_url: str, collection: str, item_id: str) -> str:
-    """The URL our own backend serves a signed STAC item at (see
-    routers/imagery.py's /item/{collection}/{item_id}.json) — this is what we
-    hand to TiTiler's /stac endpoint, since TiTiler needs a URL it can fetch
-    itself, not a Python object. request_base_url should already end in '/'
-    (FastAPI's Request.base_url does)."""
-    return f"{request_base_url}api/v1/imagery/item/{collection}/{item_id}.json"
+_POSITIONAL_BAND = re.compile(r"\bb(\d+)\b", re.IGNORECASE)
+
+
+def _titiler_expression(expression: str | None, assets: list[str]) -> str | None:
+    """Translate a recipe's positional expression to the form TiTiler expects.
+
+    Recipes (data/catalogue/hazard_layers.json, and the rows already in the
+    database) write expressions with positional b1/b2/... references matching
+    the order of `assets` — e.g. assets ["green","nir"] with
+    "(b1-b2)/(b1+b2)". TiTiler >= 1.0 (rio-tiler >= 7) no longer reads those:
+    it wants each band named by asset, "<asset>_b1" (first band of that
+    asset). Translating here, at the one place URLs are built, keeps every
+    stored recipe valid as-is — no SQL fix needed.
+    """
+    if not expression:
+        return expression
+
+    def repl(m: re.Match) -> str:
+        idx = int(m.group(1))
+        if not 1 <= idx <= len(assets):
+            raise ValueError(
+                f"Expression {expression!r} references b{idx} but only "
+                f"{len(assets)} asset(s) were given: {assets}"
+            )
+        return f"{assets[idx - 1]}_b1"
+
+    return _POSITIONAL_BAND.sub(repl, expression)
+
+
+def stac_item_ref(collection: str, item_id: str) -> str:
+    """The `url` value handed to the embedded TiTiler's /stac endpoints for a
+    STAC item. TiTiler runs inside this process now (app/tiler.py), so
+    instead of a URL it has to fetch over HTTP — once per tile — this is a
+    `stac-item://<collection>/<item_id>` reference that
+    app.tiler.InProcessSTACReader resolves from get_item_by_id's cache."""
+    return f"stac-item://{collection}/{item_id}"
 
 
 def stac_statistics_url(
@@ -362,15 +411,18 @@ def stac_statistics_url(
     literally every native pixel) while using a fraction of the memory/time.
     """
     params: list[tuple[str, str]] = [("url", item_json_url)]
-    for asset in assets:
-        params.append(("assets", asset))
     if expression:
-        params.append(("expression", expression))
+        # TiTiler derives which assets to read from the expression itself
+        # (passing `assets` too just triggers a warning and is ignored).
+        params.append(("expression", _titiler_expression(expression, assets)))
+    else:
+        for asset in assets:
+            params.append(("assets", asset))
     if nodata is not None:
         params.append(("nodata", str(nodata)))
     if max_size is not None:
         params.append(("max_size", str(max_size)))
-    return f"{settings.titiler_base_url}/stac/statistics", params
+    return f"{settings.titiler_internal}/stac/statistics", params
 
 
 def cog_statistics_url(raster_url: str, max_size: int | None = None) -> tuple[str, list[tuple[str, str]]]:
@@ -379,7 +431,7 @@ def cog_statistics_url(raster_url: str, max_size: int | None = None) -> tuple[st
     params: list[tuple[str, str]] = [("url", raster_url)]
     if max_size is not None:
         params.append(("max_size", str(max_size)))
-    return f"{settings.titiler_base_url}/cog/statistics", params
+    return f"{settings.titiler_internal}/cog/statistics", params
 
 
 def stac_point_url(
@@ -390,18 +442,21 @@ def stac_point_url(
     identify click (routers/features.py). Same expression/nodata handling
     as stac_statistics_url above."""
     params: list[tuple[str, str]] = [("url", item_json_url)]
-    for asset in assets:
-        params.append(("assets", asset))
     if expression:
-        params.append(("expression", expression))
+        # TiTiler derives which assets to read from the expression itself
+        # (passing `assets` too just triggers a warning and is ignored).
+        params.append(("expression", _titiler_expression(expression, assets)))
+    else:
+        for asset in assets:
+            params.append(("assets", asset))
     if nodata is not None:
         params.append(("nodata", str(nodata)))
-    return f"{settings.titiler_base_url}/stac/point", params
+    return f"{settings.titiler_internal}/stac/point", params
 
 
 def cog_point_url(raster_url: str) -> tuple[str, list[tuple[str, str]]]:
     """Same as stac_point_url, for a layer with a stored/static COG."""
-    return f"{settings.titiler_base_url}/cog/point", [("url", raster_url)]
+    return f"{settings.titiler_internal}/cog/point", [("url", raster_url)]
 
 
 def stac_tile_url(
@@ -423,10 +478,13 @@ def stac_tile_url(
     and why `nodata` needs to be passed explicitly.
     """
     params: list[tuple[str, str]] = [("url", item_json_url)]
-    for asset in assets:
-        params.append(("assets", asset))
     if expression:
-        params.append(("expression", expression))
+        # TiTiler derives which assets to read from the expression itself
+        # (passing `assets` too just triggers a warning and is ignored).
+        params.append(("expression", _titiler_expression(expression, assets)))
+    else:
+        for asset in assets:
+            params.append(("assets", asset))
     if rescale:
         params.append(("rescale", rescale))
     if colormap_name:
@@ -438,4 +496,4 @@ def stac_tile_url(
     # {tileMatrixSetId} path segment is required by TiTiler's router; its
     # absence (my earlier mistake) is exactly why every tile request 404'd
     # while /stac/statistics (no TMS in its path at all) worked fine.
-    return f"{settings.titiler_base_url}/stac/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?{query}"
+    return f"{settings.titiler_mount_path}/stac/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?{query}"

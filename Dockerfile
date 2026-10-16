@@ -1,7 +1,9 @@
 # Combined single-service build for Render: builds the Vite frontend, then
 # copies the static output into the FastAPI backend image, which serves both
 # the API (under /api/v1) and the frontend (everything else) from one
-# container/port — see app/main.py's StaticFiles mount.
+# container/port — see app/main.py's StaticFiles mount. TiTiler is embedded in
+# the same app (app/tiler.py, mounted at /titiler), so this one container is
+# the whole deployment: API + raster tiles + frontend.
 #
 # For local dev, keep using docker-compose.yml (separate backend/frontend
 # services with hot reload) or `npm run dev` + `uvicorn --reload` directly —
@@ -54,5 +56,24 @@ COPY backend/app ./app
 COPY backend/data ./data
 COPY --from=frontend-build /frontend/dist ./static
 
+# TiTiler runs inside this container now (app/tiler.py), so the raster-read
+# tuning that used to live on the separate TiTiler service lives here. Every
+# tile is a range-read against a COG in S3 — cost is dominated by HTTP round
+# trips, not CPU. All overridable from the Railway Variables tab.
+#
+# Memory: each uvicorn worker holds its own GDAL block cache and VSI chunk
+# cache, so WEB_CONCURRENCY x (GDAL_CACHEMAX + VSI_CACHE_SIZE) must stay well
+# under the instance's memory (2 x (200MB + 256MB) ~= 0.9GB here).
+ENV GDAL_CACHEMAX=200 \
+    GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR \
+    VSI_CACHE=TRUE \
+    VSI_CACHE_SIZE=268435456 \
+    CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.TIF,.tiff,.jp2 \
+    GDAL_HTTP_MULTIPLEX=YES \
+    GDAL_HTTP_VERSION=2 \
+    GDAL_INGESTED_BYTES_AT_OPEN=32768 \
+    GDAL_BAND_BLOCK_CACHE=HASHSET \
+    WEB_CONCURRENCY=2
+
 EXPOSE 8000
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2}"]
