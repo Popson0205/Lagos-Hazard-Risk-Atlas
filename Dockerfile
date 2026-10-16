@@ -45,8 +45,12 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app
 
+# libexpat1: the rasterio wheel (pulled in by TiTiler) bundles GDAL and friends
+# but links libexpat from the OS, which python:3.12-slim doesn't ship —
+# without it `import rasterio` fails with "libexpat.so.1: cannot open shared
+# object file" and the app never starts.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc curl \
+    libpq-dev gcc curl libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .
