@@ -110,3 +110,11 @@ CREATE TABLE IF NOT EXISTS atlas_saved_items (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_atlas_saved_items_user ON atlas_saved_items (user_id);
+
+CREATE TABLE IF NOT EXISTS atlas_user_avatars (
+    user_id INTEGER PRIMARY KEY REFERENCES atlas_users(id) ON DELETE CASCADE,
+    content_type VARCHAR(32) NOT NULL,
+    data BYTEA NOT NULL,
+    token VARCHAR(32) NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -420,6 +420,50 @@ export function firstName(name: string): string {
   return name.replace(HONORIFIC, "").trim().split(/\s+/)[0] || name;
 }
 
+/** Fill an avatar element with the user's picture, falling back to initials
+ * if there's no picture or it fails to load. */
+export function paintAvatar(el: HTMLElement, name: string, url?: string | null): void {
+  el.textContent = initials(name);
+  el.classList.remove("has-photo");
+  if (!url) return;
+  const img = new Image();
+  img.alt = "";
+  img.decoding = "async";
+  img.onload = () => {
+    el.textContent = "";
+    el.appendChild(img);
+    el.classList.add("has-photo");
+  };
+  img.src = url;
+}
+
+/** Read an image file, centre-crop it to a square and scale it to `size`px,
+ * returning a JPEG data URL. Keeps uploads small whatever the camera made. */
+export function resizeImage(file: File, size = 320): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      if (!side) return reject(new Error("That image appears to be empty."));
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = Math.min(size, side);
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#fff"; // transparent PNGs get a white background in JPEG
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.88));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("This browser can't open that image. Use a JPEG, PNG or WebP file."));
+    };
+    img.src = url;
+  });
+}
+
 export function initials(name: string): string {
   const parts = name.replace(HONORIFIC, "").trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";

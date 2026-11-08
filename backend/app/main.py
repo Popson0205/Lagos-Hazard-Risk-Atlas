@@ -52,6 +52,7 @@ app.include_router(imagery.router)
 app.include_router(accounts.auth_router, prefix=settings.api_v1_prefix, dependencies=[Depends(accounts.ensure_tables)])
 app.include_router(accounts.records_router, prefix=settings.api_v1_prefix, dependencies=[Depends(accounts.ensure_tables)])
 app.include_router(accounts.items_router, prefix=settings.api_v1_prefix, dependencies=[Depends(accounts.ensure_tables)])
+app.include_router(accounts.avatar_router, prefix=settings.api_v1_prefix, dependencies=[Depends(accounts.ensure_tables)])
 
 
 @app.on_event("startup")

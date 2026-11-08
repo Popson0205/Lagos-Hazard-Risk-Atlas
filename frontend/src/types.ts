@@ -146,6 +146,8 @@ export interface User {
     access_request?: { at: string; note: string };
     [k: string]: unknown;
   };
+  /** Profile picture URL, or null to show initials. */
+  avatar_url?: string | null;
   created_at: string;
 }
 

@@ -134,6 +134,18 @@ export const session = {
   changePassword: (current_password: string, new_password: string) =>
     request<void>("POST", "/auth/password", { current_password, new_password }),
 
+  async uploadAvatar(dataUrl: string): Promise<User> {
+    user = await request<User>("PUT", "/auth/me/avatar", { image: dataUrl });
+    emit();
+    return user;
+  },
+
+  async removeAvatar(): Promise<User> {
+    user = await request<User>("DELETE", "/auth/me/avatar");
+    emit();
+    return user;
+  },
+
   async requestAccess(note: string): Promise<User> {
     user = await request<User>("POST", "/auth/request-access", { note });
     emit();

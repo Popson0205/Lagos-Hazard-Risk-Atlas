@@ -4,7 +4,7 @@ import { getCatalogue, hazardLabel } from "./catalogue";
 import { go } from "./router";
 import { records, session } from "./session";
 import type { User } from "./types";
-import { escapeHtml, fmtDate, initials, openModal, showWelcome, toast } from "./ui";
+import { escapeHtml, fmtDate, openModal, paintAvatar, showWelcome, toast } from "./ui";
 
 /* ==========================================================================
    App chrome shared by every screen: navigation rail, top bar (search,
@@ -75,8 +75,11 @@ function renderIdentity(u: User | null): void {
   $("user-chip-name").textContent = name;
   $("user-chip-role").textContent = sub;
   const chipAvatar = $("user-chip-avatar");
-  chipAvatar.textContent = u ? initials(u.full_name) : "";
-  if (!u) chipAvatar.innerHTML = ICON.user;
+  if (u) paintAvatar(chipAvatar, u.full_name, u.avatar_url);
+  else {
+    chipAvatar.classList.remove("has-photo");
+    chipAvatar.innerHTML = ICON.user;
+  }
 
   $("nav-user-name").textContent = u ? "Authorized User" : "Public Visitor";
   $("nav-user-role").textContent = roleLabel(u);
