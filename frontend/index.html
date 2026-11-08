@@ -220,6 +220,18 @@
                   <div class="select-wrap"><select id="scenario-select"><option value="">All scenarios</option></select></div>
                 </div>
 
+                <section id="layer-list-section" class="acc">
+                  <h2><button type="button" class="acc-head" aria-expanded="true" aria-controls="layer-list-body">
+                    <svg class="acc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+                    <span>Data Layers</span>
+                    <span class="acc-count" id="layer-count"></span>
+                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+                  </button></h2>
+                  <div class="acc-body" id="layer-list-body">
+                    <ul id="layer-list"></ul>
+                  </div>
+                </section>
+
                 <section id="scene-search-section" class="acc locked">
                   <h2><button type="button" class="acc-head" aria-expanded="true" aria-controls="scene-body">
                     <svg class="acc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 19H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 20.5 11a4 4 0 0 1-3 8z"/></svg>
@@ -244,18 +256,6 @@
                     </button>
                     <div id="scene-search-status" class="hint" aria-live="polite"></div>
                     <ul id="scene-list"></ul>
-                  </div>
-                </section>
-
-                <section id="layer-list-section" class="acc">
-                  <h2><button type="button" class="acc-head" aria-expanded="true" aria-controls="layer-list-body">
-                    <svg class="acc-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>
-                    <span>Data Layers</span>
-                    <span class="acc-count" id="layer-count"></span>
-                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
-                  </button></h2>
-                  <div class="acc-body" id="layer-list-body">
-                    <ul id="layer-list"></ul>
                   </div>
                 </section>
 

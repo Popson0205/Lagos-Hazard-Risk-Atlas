@@ -408,7 +408,7 @@ export async function initMapWorkspace(): Promise<void> {
       sceneListEl.innerHTML = "";
       sceneSearchStatusEl.textContent = layers.getTopActiveLayerId()
         ? "This layer isn't tied to a single satellite scene, so there's nothing to pick here."
-        : "Switch on a live satellite layer (Extreme Heat, Coastal Flooding or Drought) to browse scenes.";
+        : "Switch on a live satellite layer above (Extreme Heat, Coastal Flooding or Drought) to browse its scenes.";
     } else if (!sceneListEl.children.length && !sceneSearchStatusEl.textContent) {
       sceneSearchStatusEl.textContent = currentAoi
         ? "Search scenes that cover your area, or skip to use the most recent one."
