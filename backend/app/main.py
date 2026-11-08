@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.tiler import create_tiler_app
+from app import accounts
 from app.routers import hazards, layers, features, scenarios, search, analysis, health, boundaries, imagery
 
 settings = get_settings()
@@ -40,6 +41,21 @@ app.include_router(boundaries.router, prefix=settings.api_v1_prefix)
 # extra prefix here. (Its /item/...json endpoint is no longer fetched by
 # TiTiler — see app/tiler.py — but stays as a handy way to inspect an item.)
 app.include_router(imagery.router)
+# Signed-in features: accounts, the Data Management Portal and saved items.
+app.include_router(accounts.auth_router, prefix=settings.api_v1_prefix)
+app.include_router(accounts.records_router, prefix=settings.api_v1_prefix)
+app.include_router(accounts.items_router, prefix=settings.api_v1_prefix)
+
+
+@app.on_event("startup")
+def _create_account_tables() -> None:
+    accounts.init_tables()
+
+
+@app.get(f"{settings.api_v1_prefix}/status", tags=["health"])
+def system_status():
+    """Version + status shown in the app's footer bar."""
+    return {"status": "stable", "version": settings.app_version}
 
 # TiTiler runs inside this app (see app/tiler.py) — one deployment serves the
 # API, the raster tiles and the frontend. Like the API routers, this has to be

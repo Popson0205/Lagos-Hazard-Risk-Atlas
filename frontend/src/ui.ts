@@ -125,6 +125,7 @@ export function buildLayerCard(
   const li = document.createElement("li");
   li.className = "layer-card";
   li.dataset.name = layer.name;
+  li.dataset.id = layer.id;
 
   const row = document.createElement("div");
   row.className = "layer-row";
@@ -133,7 +134,7 @@ export function buildLayerCard(
   label.className = "switch-row";
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
-  checkbox.className = "switch";
+  checkbox.className = "check";
   checkbox.checked = checked;
   const name = document.createElement("span");
   name.className = "layer-name";
@@ -205,6 +206,7 @@ export function buildLayerCard(
   range.max = "100";
   range.step = "5";
   range.value = String(Math.round(opacity * 100));
+  range.style.setProperty("--fill", `${((Number(range.value) - 20) / 80) * 100}%`);
   range.addEventListener("input", () => onOpacity(Number(range.value) / 100));
   opacityRow.append(opLabel, range);
 
@@ -316,37 +318,7 @@ export const modalFocus = {
   },
 };
 
-/* ---------- Step summaries and action context ---------- */
-
-function setStep(id: string, status: string, done: boolean): void {
-  const section = $(id);
-  if (!section) return;
-  const el = section.querySelector<HTMLElement>(".step-status");
-  if (el) {
-    el.textContent = status;
-    el.title = status;
-  }
-  section.classList.toggle("done", done);
-}
-
-export function refreshSummaries(): void {
-  const hazardSel = $<HTMLSelectElement>("hazard-select");
-  const hazardName = (hazardSel?.selectedOptions[0]?.textContent ?? "").replace(/\s*\(coming soon\)$/, "");
-  setStep("step-hazard", hazardName, !!hazardName);
-
-  const names = Array.from(document.querySelectorAll<HTMLLIElement>("#layer-list li.layer-card"))
-    .filter((li) => li.querySelector<HTMLInputElement>("input.switch")?.checked)
-    .map((li) => li.dataset.name ?? "");
-  setStep("layer-list-section", names.length === 0 ? "None on" : names.length === 1 ? names[0] : `${names.length} layers on`, names.length > 0);
-
-  const clearBtn = $<HTMLButtonElement>("aoi-clear-btn");
-  const hasAoi = !!clearBtn && !clearBtn.hidden;
-  const aoiText = ($("aoi-summary")?.textContent ?? "").trim();
-  setStep("aoi-section", hasAoi ? aoiText : "Not set", hasAoi);
-
-  const scene = $("scene-search-section");
-  if (scene) setStep("scene-search-section", scene.classList.contains("locked") ? "Needs a recent-scene layer" : "Optional", false);
-}
+/* ---------- Action context ---------- */
 
 export function setActionContext(layerName?: string | null, aoiName?: string | null): void {
   const el = $("action-context");
@@ -354,30 +326,119 @@ export function setActionContext(layerName?: string | null, aoiName?: string | n
   el.textContent = layerName && aoiName ? `${layerName} in ${aoiName}` : "";
 }
 
-/* ---------- initUI: wire everything that doesn't need map state ---------- */
+/* ---------- Generic modal (forms, confirmations, documents) ---------- */
 
-type SheetState = "peek" | "half" | "full";
-const SHEET_ORDER: SheetState[] = ["peek", "half", "full"];
+let genericOnClose: (() => void) | null = null;
 
-function initTheme(): void {
-  const btn = $<HTMLButtonElement>("theme-toggle");
-  const root = document.documentElement;
-  const apply = (theme: "light" | "dark") => {
-    root.dataset.theme = theme;
-    btn?.setAttribute("aria-pressed", String(theme === "dark"));
-    btn?.setAttribute("aria-label", theme === "dark" ? "Switch to light theme" : "Switch to dark theme");
-  };
-  apply(store.get("atlas-theme") === "dark" ? "dark" : "light");
-  btn?.addEventListener("click", () => {
-    const next = root.dataset.theme === "dark" ? "light" : "dark";
-    apply(next);
-    store.set("atlas-theme", next);
+export function openModal(content: string | HTMLElement, opts: { wide?: boolean; onClose?: () => void } = {}): HTMLElement {
+  const overlay = $("generic-modal-overlay")!;
+  const body = $("generic-modal-body")!;
+  const card = overlay.querySelector<HTMLElement>(".modal-card")!;
+  card.style.width = opts.wide ? "min(720px, 100%)" : "";
+  body.innerHTML = "";
+  if (typeof content === "string") body.innerHTML = content;
+  else body.appendChild(content);
+  overlay.hidden = false;
+  genericOnClose = opts.onClose ?? null;
+  modalFocus.open(overlay);
+  const firstField = body.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea");
+  firstField?.focus();
+  return body;
+}
+
+export function closeModal(): void {
+  const overlay = $("generic-modal-overlay");
+  if (!overlay || overlay.hidden) return;
+  overlay.hidden = true;
+  modalFocus.close();
+  const cb = genericOnClose;
+  genericOnClose = null;
+  cb?.();
+}
+
+export function confirmDialog(opts: { title: string; text: string; confirm: string; danger?: boolean }): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+    };
+    const body = openModal(
+      `<div class="modal-form"><h2 id="generic-modal-title">${escapeHtml(opts.title)}</h2><p>${escapeHtml(opts.text)}</p>
+       <div class="modal-actions"><button type="button" data-v="0">Cancel</button>
+       <button type="button" data-v="1" class="${opts.danger ? "btn-danger" : "primary"}">${escapeHtml(opts.confirm)}</button></div></div>`,
+      { onClose: () => done(false) }
+    );
+    body.querySelectorAll<HTMLButtonElement>("button[data-v]").forEach((b) =>
+      b.addEventListener("click", () => {
+        done(b.dataset.v === "1");
+        closeModal();
+      })
+    );
+    body.querySelector<HTMLButtonElement>("button[data-v='1']")?.focus();
   });
 }
 
+/** Prompt for a short name (saving a map view / area). */
+export function promptName(title: string, label: string, initial: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v: string | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
+    const body = openModal(
+      `<form class="modal-form"><h2 id="generic-modal-title">${escapeHtml(title)}</h2>
+        <div class="field" style="margin-top:14px"><label for="prompt-name">${escapeHtml(label)}</label>
+        <input id="prompt-name" type="text" maxlength="160" required value="${escapeHtml(initial)}" /></div>
+        <div class="modal-actions"><button type="button" data-cancel>Cancel</button><button type="submit" class="primary">Save</button></div></form>`,
+      { onClose: () => done(null) }
+    );
+    const form = body.querySelector("form")!;
+    const input = body.querySelector<HTMLInputElement>("#prompt-name")!;
+    input.select();
+    body.querySelector("[data-cancel]")!.addEventListener("click", () => closeModal());
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = input.value.trim();
+      if (!v) return;
+      done(v);
+      closeModal();
+    });
+  });
+}
+
+/* ---------- Small formatting helpers shared by the views ---------- */
+
+const HONORIFIC = /^(dr|mr|mrs|ms|miss|prof|engr|arc|chief|hon)\.?\s+/i;
+
+/** "Dr. Adebayo Ogunlewe" -> "Adebayo" (for greetings). */
+export function firstName(name: string): string {
+  return name.replace(HONORIFIC, "").trim().split(/\s+/)[0] || name;
+}
+
+export function initials(name: string): string {
+  const parts = name.replace(HONORIFIC, "").trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
+}
+
+export function fmtDate(iso: string | Date, opts: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" }): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, opts);
+}
+
+export function isoDay(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 10);
+}
+
+/* ---------- initUI: wire everything that doesn't need map state ---------- */
+
 function initAccordion(): void {
-  document.querySelectorAll<HTMLElement>(".step").forEach((section) => {
-    const head = section.querySelector<HTMLButtonElement>(".step-head");
+  document.querySelectorAll<HTMLElement>(".acc").forEach((section) => {
+    const head = section.querySelector<HTMLButtonElement>(".acc-head");
     head?.addEventListener("click", () => {
       const collapsed = section.classList.toggle("collapsed");
       head.setAttribute("aria-expanded", String(!collapsed));
@@ -385,47 +446,11 @@ function initAccordion(): void {
   });
 }
 
-function initSheet(): void {
-  const app = $("app");
-  const handle = $<HTMLButtonElement>("sheet-handle");
-  if (!app || !handle) return;
-  const mobile = window.matchMedia("(max-width: 760px)");
-  const get = (): SheetState => (app.dataset.sheet as SheetState) || "half";
-  const set = (s: SheetState) => {
-    app.dataset.sheet = s;
-    handle.setAttribute("aria-expanded", String(s !== "peek"));
-  };
-  set("half");
-
-  handle.addEventListener("click", () => {
-    if (!mobile.matches) return;
-    const i = SHEET_ORDER.indexOf(get());
-    set(SHEET_ORDER[(i + 1) % SHEET_ORDER.length]);
-  });
-
-  // Swipe up/down on the handle or header.
-  let startY: number | null = null;
-  const brand = document.querySelector<HTMLElement>(".brand");
-  for (const el of [handle, brand]) {
-    el?.addEventListener("pointerdown", (e) => {
-      if (mobile.matches) startY = e.clientY;
-    });
-  }
-  window.addEventListener("pointerup", (e) => {
-    if (startY === null) return;
-    const dy = e.clientY - startY;
-    startY = null;
-    if (Math.abs(dy) < 40) return;
-    const i = SHEET_ORDER.indexOf(get());
-    set(SHEET_ORDER[Math.max(0, Math.min(SHEET_ORDER.length - 1, i + (dy < 0 ? 1 : -1)))]);
-  });
-
-  // Once an area is chosen on a phone, get the panel out of the way of the map.
-  $("aoi-summary") &&
-    new MutationObserver(() => {
-      const clearBtn = $<HTMLButtonElement>("aoi-clear-btn");
-      if (mobile.matches && clearBtn && !clearBtn.hidden && get() === "full") set("half");
-    }).observe($("aoi-summary")!, { childList: true, characterData: true, subtree: true });
+export function expandSection(id: string): void {
+  const section = $(id);
+  if (!section) return;
+  section.classList.remove("collapsed");
+  section.querySelector(".acc-head")?.setAttribute("aria-expanded", "true");
 }
 
 function initWelcome(): void {
@@ -437,14 +462,17 @@ function initWelcome(): void {
   };
   $("welcome-close")?.addEventListener("click", hide);
   $("welcome-start")?.addEventListener("click", hide);
-  $("help-btn")?.addEventListener("click", () => {
-    card.hidden = !card.hidden;
-    if (!card.hidden) card.querySelector<HTMLElement>("button")?.focus();
-  });
   card.hidden = store.get("atlas-welcome-seen") === "1";
   card.addEventListener("keydown", (e) => {
     if (e.key === "Escape") hide();
   });
+}
+
+export function showWelcome(): void {
+  const card = $("welcome");
+  if (!card) return;
+  card.hidden = false;
+  card.querySelector<HTMLElement>("button")?.focus();
 }
 
 function initSearchKeyboard(): void {
@@ -460,82 +488,104 @@ function initSearchKeyboard(): void {
 
   new MutationObserver(() => {
     const items = Array.from(list.querySelectorAll<HTMLLIElement>("li"));
+    list.hidden = items.length === 0;
     input.setAttribute("aria-expanded", String(items.length > 0));
     items.forEach((li) => {
-      if (li.classList.contains("state-inline")) return;
+      if (li.classList.contains("state-inline") || li.classList.contains("sr-heading")) return;
       li.setAttribute("role", "option");
       li.tabIndex = 0;
     });
   }).observe(list, { childList: true });
 
+  const options = () => Array.from(list.querySelectorAll<HTMLElement>("li[role='option']"));
   input.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") {
-      const first = list.querySelector<HTMLElement>("li[role='option']");
+      const first = options()[0];
       if (first) {
         e.preventDefault();
         first.focus();
       }
+    } else if (e.key === "Enter") {
+      const first = options()[0];
+      if (first) {
+        e.preventDefault();
+        first.click();
+      }
+    } else if (e.key === "Escape") {
+      list.innerHTML = "";
     }
   });
   list.addEventListener("keydown", (e) => {
-    const target = e.target as HTMLElement;
+    const all = options();
+    const i = all.indexOf(e.target as HTMLElement);
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      (target.nextElementSibling as HTMLElement | null)?.focus();
+      all[Math.min(all.length - 1, i + 1)]?.focus();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      const prev = target.previousElementSibling as HTMLElement | null;
-      (prev ?? input).focus();
+      (i <= 0 ? input : all[i - 1]).focus();
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      target.click();
+      (e.target as HTMLElement).click();
     } else if (e.key === "Escape") {
+      list.innerHTML = "";
       input.focus();
     }
+  });
+  document.addEventListener("click", (e) => {
+    if (!list.contains(e.target as Node) && e.target !== input) list.innerHTML = "";
   });
 }
 
 function initModalActions(): void {
   const overlay = $("analysis-modal-overlay");
-  if (!overlay) return;
-  overlay.addEventListener("click", async (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-act]");
-    if (!btn) return;
-    if (btn.dataset.act === "print") {
-      window.print();
-    } else if (btn.dataset.act === "copy") {
-      const title = overlay.querySelector(".modal-title")?.textContent ?? "";
-      const layer = overlay.querySelector(".modal-subtitle")?.textContent ?? "";
-      const summary = (overlay.querySelector(".modal-summary") as HTMLElement | null)?.innerText ?? "";
-      const text = `${title} | ${layer}\n\n${summary}\n\nSource: Lagos State Climate Hazard Risk Atlas (open satellite data).`;
-      try {
-        await navigator.clipboard.writeText(text);
-        toast("Summary copied.", "success", 2500);
-      } catch {
-        toast("Couldn't copy automatically. Select the text and copy it instead.", "error");
+  if (overlay) {
+    overlay.addEventListener("click", async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-act]");
+      if (!btn) return;
+      if (btn.dataset.act === "print") {
+        window.print();
+      } else if (btn.dataset.act === "copy") {
+        const title = overlay.querySelector(".modal-title")?.textContent ?? "";
+        const layer = overlay.querySelector(".modal-subtitle")?.textContent ?? "";
+        const summary = (overlay.querySelector(".modal-summary") as HTMLElement | null)?.innerText ?? "";
+        const text = `${title} | ${layer}\n\n${summary}\n\nSource: Lagos State Risk Atlas (open satellite data).`;
+        try {
+          await navigator.clipboard.writeText(text);
+          toast("Summary copied.", "success", 2500);
+        } catch {
+          toast("Couldn't copy automatically. Select the text and copy it instead.", "error");
+        }
       }
-    }
+    });
+  }
+  const generic = $("generic-modal-overlay");
+  $("generic-modal-close")?.addEventListener("click", closeModal);
+  generic?.addEventListener("mousedown", (e) => {
+    if (e.target === generic) closeModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && generic && !generic.hidden) closeModal();
   });
 }
 
-function initSummaryObservers(): void {
-  const aoiSummary = $("aoi-summary");
-  if (aoiSummary) new MutationObserver(refreshSummaries).observe(aoiSummary, { childList: true, characterData: true, subtree: true });
-  const clearBtn = $("aoi-clear-btn");
-  if (clearBtn) new MutationObserver(refreshSummaries).observe(clearBtn, { attributes: true, attributeFilter: ["hidden"] });
-  const scene = $("scene-search-section");
-  if (scene) new MutationObserver(refreshSummaries).observe(scene, { attributes: true, attributeFilter: ["class"] });
-  $("hazard-select")?.addEventListener("change", refreshSummaries);
-  $("layer-list")?.addEventListener("change", () => window.setTimeout(refreshSummaries, 0));
-  refreshSummaries();
+function initRangeFill(): void {
+  const paint = (r: HTMLInputElement) => {
+    const pct = ((Number(r.value) - Number(r.min || 0)) / (Number(r.max || 100) - Number(r.min || 0))) * 100;
+    r.style.setProperty("--fill", `${pct}%`);
+  };
+  document.addEventListener("input", (e) => {
+    const t = e.target as HTMLElement;
+    if (t instanceof HTMLInputElement && t.type === "range") paint(t);
+  });
+  document.querySelectorAll<HTMLInputElement>("input[type=range]").forEach(paint);
 }
 
 export function initUI(): void {
-  initTheme();
   initAccordion();
-  initSheet();
   initWelcome();
   initSearchKeyboard();
   initModalActions();
-  initSummaryObservers();
+  initRangeFill();
+  document.querySelectorAll(".js-year").forEach((el) => (el.textContent = String(new Date().getFullYear())));
 }

@@ -122,7 +122,15 @@ export class LayerManager {
       this.onLegendChange(null);
       return;
     }
-    await this.activate(layerId);
+    try {
+      await this.activate(layerId);
+    } catch (err) {
+      // activate() records the layer's details before it knows whether the
+      // layer can actually be drawn; don't leave a half-registered layer
+      // behind, or analysis/legend logic would treat it as switched on.
+      if (!this.active.has(layerId)) this.details.delete(layerId);
+      throw err;
+    }
   }
 
   /** Re-fetches every currently-active *raster* layer against the current
