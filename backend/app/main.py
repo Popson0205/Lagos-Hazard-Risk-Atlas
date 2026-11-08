@@ -2,10 +2,10 @@ from pathlib import Path
 
 import logging
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.exc import OperationalError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -49,9 +49,9 @@ app.include_router(boundaries.router, prefix=settings.api_v1_prefix)
 # TiTiler — see app/tiler.py — but stays as a handy way to inspect an item.)
 app.include_router(imagery.router)
 # Signed-in features: accounts, the Data Management Portal and saved items.
-app.include_router(accounts.auth_router, prefix=settings.api_v1_prefix)
-app.include_router(accounts.records_router, prefix=settings.api_v1_prefix)
-app.include_router(accounts.items_router, prefix=settings.api_v1_prefix)
+app.include_router(accounts.auth_router, prefix=settings.api_v1_prefix, dependencies=[Depends(accounts.ensure_tables)])
+app.include_router(accounts.records_router, prefix=settings.api_v1_prefix, dependencies=[Depends(accounts.ensure_tables)])
+app.include_router(accounts.items_router, prefix=settings.api_v1_prefix, dependencies=[Depends(accounts.ensure_tables)])
 
 
 @app.on_event("startup")
@@ -60,7 +60,6 @@ def _create_account_tables() -> None:
 
 
 @app.exception_handler(OperationalError)
-@app.exception_handler(DBAPIError)
 async def _database_unavailable(request: Request, exc: Exception):
     """A database that can't be reached (paused Supabase project, wrong
     DATABASE_URL, pooler outage) used to surface as a bare 500 on every
