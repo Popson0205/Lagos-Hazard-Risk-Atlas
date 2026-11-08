@@ -10,7 +10,7 @@ equivalent DDL for anyone provisioning the database by hand.
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -74,3 +74,19 @@ class SavedItem(Base):
     name: Mapped[str] = mapped_column(String(160))
     payload: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class UserAvatar(Base):
+    """A user's profile picture, stored in the database (a ~256px JPEG/PNG/WebP,
+    resized in the browser before upload) since the stack has no object store.
+    Kept out of atlas_users so normal user queries don't load the image."""
+
+    __tablename__ = "atlas_user_avatars"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("atlas_users.id", ondelete="CASCADE"), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(32))
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    # Random token in the picture's URL: changes on every upload (so browsers
+    # can cache forever) and keeps picture URLs unguessable.
+    token: Mapped[str] = mapped_column(String(32))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

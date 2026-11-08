@@ -6,12 +6,12 @@ from fastapi import HTTPException, status
 
 from app.database import Base, engine
 
-from .models import DatasetRecord, SavedItem, User
-from .routes import auth_router, items_router, records_router
+from .models import DatasetRecord, SavedItem, User, UserAvatar
+from .routes import auth_router, avatar_router, items_router, records_router
 
 log = logging.getLogger(__name__)
 
-__all__ = ["auth_router", "records_router", "items_router", "init_tables", "ensure_tables"]
+__all__ = ["auth_router", "avatar_router", "records_router", "items_router", "init_tables", "ensure_tables"]
 
 _ready = False
 _lock = threading.Lock()
@@ -19,7 +19,7 @@ _lock = threading.Lock()
 
 def init_tables() -> bool:
     """Create the account tables if they don't exist yet. Only touches these
-    three tables, never the hazard catalogue. Returns True once they exist."""
+    account tables, never the hazard catalogue. Returns True once they exist."""
     global _ready
     if _ready:
         return True
@@ -28,7 +28,7 @@ def init_tables() -> bool:
             return True
         try:
             Base.metadata.create_all(
-                engine, tables=[User.__table__, DatasetRecord.__table__, SavedItem.__table__]
+                engine, tables=[User.__table__, DatasetRecord.__table__, SavedItem.__table__, UserAvatar.__table__]
             )
             _ready = True
             log.info("Account tables are ready.")

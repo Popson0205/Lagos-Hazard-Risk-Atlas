@@ -3,7 +3,7 @@ import { getCatalogue, hazardLabel } from "../catalogue";
 import { go, onShow } from "../router";
 import { records, savedItems, session } from "../session";
 import type { SavedAoiPayload, SavedItem, SavedMapPayload, User } from "../types";
-import { closeModal, confirmDialog, escapeHtml, fmtDate, initials, openModal, setBusy, toast } from "../ui";
+import { closeModal, confirmDialog, escapeHtml, fmtDate, openModal, paintAvatar, resizeImage, setBusy, toast } from "../ui";
 
 /* ==========================================================================
    Account Settings: Profile, Saved Maps, Areas of Interest, Alerts, Security,
@@ -52,7 +52,15 @@ function renderProfile(u: User): void {
     "Personal Information",
     "Update your professional details and contact information.",
     `<div class="profile-row">
-      <span class="avatar avatar-xl" aria-hidden="true">${escapeHtml(initials(u.full_name))}</span>
+      <div class="avatar-edit">
+        <span class="avatar avatar-xl" id="pf-avatar" aria-hidden="true"></span>
+        <label class="avatar-change" for="pf-photo" title="Change photo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+          <span class="sr-only">Change profile photo</span>
+        </label>
+        <input type="file" id="pf-photo" accept="image/jpeg,image/png,image/webp" hidden />
+        <button type="button" class="link-btn" id="pf-photo-remove" ${u.avatar_url ? "" : "hidden"}>Remove photo</button>
+      </div>
       <div class="form-grid">
         ${field("pf-name", "Full Name", I.user, u.full_name)}
         ${field("pf-email", "Email Address", I.mail, u.email, { readonly: true, type: "email" })}
@@ -64,6 +72,43 @@ function renderProfile(u: User): void {
      <button type="button" class="btn" id="pf-cancel">Cancel Changes</button>
      <button type="button" class="btn btn-primary" id="pf-save">Save Information</button>`
   );
+  paintAvatar($("pf-avatar"), u.full_name, u.avatar_url);
+  const photoInput = $<HTMLInputElement>("pf-photo");
+  photoInput.addEventListener("change", async () => {
+    const file = photoInput.files?.[0];
+    photoInput.value = "";
+    if (!file) return;
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
+      toast("Use a JPEG, PNG or WebP image.", "error");
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      toast("That image is over 15 MB. Choose a smaller one.", "error");
+      return;
+    }
+    const wrap = document.querySelector<HTMLElement>(".avatar-edit");
+    wrap?.classList.add("busy");
+    try {
+      const updated = await session.uploadAvatar(await resizeImage(file));
+      paintAvatar($("pf-avatar"), updated.full_name, updated.avatar_url);
+      $("pf-photo-remove").hidden = false;
+      toast("Profile photo updated.", "success", 2500);
+    } catch (err) {
+      toast((err as Error).message, "error", 6000);
+    } finally {
+      wrap?.classList.remove("busy");
+    }
+  });
+  $("pf-photo-remove").addEventListener("click", async () => {
+    try {
+      const updated = await session.removeAvatar();
+      paintAvatar($("pf-avatar"), updated.full_name, null);
+      $("pf-photo-remove").hidden = true;
+      toast("Profile photo removed.", "info", 2500);
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  });
   $("pf-cancel").addEventListener("click", () => renderProfile(session.user!));
   $("pf-save").addEventListener("click", async (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
@@ -85,6 +130,7 @@ function renderProfile(u: User): void {
       });
       msg.style.color = "";
       msg.textContent = "Saved.";
+      paintAvatar($("pf-avatar"), session.user!.full_name, session.user!.avatar_url);
       toast("Profile updated.", "success", 2500);
     } catch (err) {
       msg.style.color = "var(--danger)";

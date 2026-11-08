@@ -10,9 +10,12 @@ token; only these routes do.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import csv
 import io
 import re
+import secrets
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -25,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 
-from .models import DatasetRecord, SavedItem, User
+from .models import DatasetRecord, SavedItem, User, UserAvatar
 from .security import create_token, current_user, hash_password, is_admin, verify_password
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -41,11 +44,14 @@ class UserOut(BaseModel):
     professional_role: str | None = None
     organization: str | None = None
     preferences: dict[str, Any] = {}
+    avatar_url: str | None = None
     created_at: datetime
 
     @classmethod
     def of(cls, u: User) -> "UserOut":
+        token = (u.preferences or {}).get("avatar_token")
         return cls(
+            avatar_url=f"{get_settings().api_v1_prefix}/users/{u.id}/avatar/{token}" if token else None,
             id=u.id,
             email=u.email,
             full_name=u.full_name,
@@ -233,6 +239,21 @@ def _admin_emails() -> set[str]:
 
 # ---------------------------------------------------------------- auth
 
+# Preference keys only the server may set.
+_SERVER_PREFS = {"access_request", "avatar_token"}
+
+_MAX_AVATAR_BYTES = 2 * 1024 * 1024
+_IMAGE_MAGIC = {
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/webp": (b"RIFF",),
+}
+
+
+class AvatarIn(BaseModel):
+    # A data URL ("data:image/jpeg;base64,...") as produced by canvas.toDataURL.
+    image: str = Field(max_length=3_000_000)
+
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -287,7 +308,7 @@ def update_me(body: ProfileIn, user: User = Depends(current_user), db: Session =
     if body.preferences is not None:
         # Merge rather than replace, and never let the client set server-owned keys.
         merged = dict(user.preferences or {})
-        merged.update({k: v for k, v in body.preferences.items() if k != "access_request"})
+        merged.update({k: v for k, v in body.preferences.items() if k not in _SERVER_PREFS})
         user.preferences = merged
     db.commit()
     db.refresh(user)
@@ -311,6 +332,65 @@ def request_access(body: AccessRequestIn, user: User = Depends(current_user), db
     db.commit()
     db.refresh(user)
     return UserOut.of(user)
+
+
+@auth_router.put("/me/avatar", response_model=UserOut)
+def upload_avatar(body: AvatarIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    m = re.match(r"^data:(image/(?:jpeg|png|webp));base64,(.+)$", body.image, re.S)
+    if not m:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Upload a JPEG, PNG or WebP image.")
+    content_type = m.group(1)
+    try:
+        data = base64.b64decode(m.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That image couldn't be read. Try another file.")
+    if len(data) > _MAX_AVATAR_BYTES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That image is too large. Use one under 2 MB.")
+    if not data.startswith(_IMAGE_MAGIC[content_type]) or (content_type == "image/webp" and data[8:12] != b"WEBP"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That file isn't a valid image.")
+    token = secrets.token_urlsafe(12)
+    avatar = db.get(UserAvatar, user.id)
+    if avatar is None:
+        avatar = UserAvatar(user_id=user.id, content_type=content_type, data=data, token=token)
+        db.add(avatar)
+    else:
+        avatar.content_type, avatar.data, avatar.token = content_type, data, token
+    prefs = dict(user.preferences or {})
+    prefs["avatar_token"] = token
+    user.preferences = prefs
+    db.commit()
+    db.refresh(user)
+    return UserOut.of(user)
+
+
+@auth_router.delete("/me/avatar", response_model=UserOut)
+def delete_avatar(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    avatar = db.get(UserAvatar, user.id)
+    if avatar is not None:
+        db.delete(avatar)
+    prefs = dict(user.preferences or {})
+    prefs.pop("avatar_token", None)
+    user.preferences = prefs
+    db.commit()
+    db.refresh(user)
+    return UserOut.of(user)
+
+
+# Served without a sign-in header (an <img> can't send one); the random token
+# in the path is what grants access, and it changes on every upload.
+avatar_router = APIRouter(prefix="/users", tags=["auth"])
+
+
+@avatar_router.get("/{user_id}/avatar/{token}")
+def get_avatar(user_id: int, token: str, db: Session = Depends(get_db)):
+    avatar = db.get(UserAvatar, user_id)
+    if avatar is None or not secrets.compare_digest(avatar.token, token):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No picture.")
+    return Response(
+        content=avatar.data,
+        media_type=avatar.content_type,
+        headers={"Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 # ---------------------------------------------------------------- records
