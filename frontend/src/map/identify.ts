@@ -22,8 +22,9 @@ function unitLabel(unit?: string | null): string {
 export function setupIdentify(map: L.Map, layers: LayerManager, resultEl: HTMLElement): void {
   map.on("click", async (e: L.LeafletMouseEvent) => {
     const layerId = layers.getTopActiveLayerId();
+    resultEl.classList.remove("has-value");
     if (!layerId) {
-      resultEl.textContent = "Switch on a map layer first, then click the map.";
+      resultEl.textContent = "Switch on a data layer first, then click the map.";
       return;
     }
     const detail = layers.getTopActiveDetail();
@@ -60,7 +61,8 @@ export function setupIdentify(map: L.Map, layers: LayerManager, resultEl: HTMLEl
       popup.setContent(
         `<div class="identify-pop"><strong>${escapeHtml(name)}</strong>${body}<div class="hint" style="margin:6px 0 0">${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}</div></div>`
       );
-      resultEl.textContent = `${name}: ${plain}`;
+      resultEl.textContent = `${name}: ${plain} at ${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
+      resultEl.classList.add("has-value");
     } catch (err) {
       popup.setContent(
         `<div class="identify-pop"><strong>Couldn't read this point</strong>${escapeHtml((err as Error).message)}. This layer may not support point lookups yet.</div>`

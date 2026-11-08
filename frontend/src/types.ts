@@ -131,3 +131,81 @@ export interface AnalysisResult {
   observed_at?: string | null;
   relaxed_search?: boolean;
 }
+
+/* ---------- Accounts, Data Portal, saved items ---------- */
+
+export interface User {
+  id: number;
+  email: string;
+  full_name: string;
+  role: "contributor" | "admin" | string;
+  professional_role?: string | null;
+  organization?: string | null;
+  preferences: {
+    alerts?: Record<string, boolean>;
+    access_request?: { at: string; note: string };
+    [k: string]: unknown;
+  };
+  created_at: string;
+}
+
+export type RecordStatus = "draft" | "submitted" | "published" | "rejected";
+
+export interface DatasetRecord {
+  id: number;
+  code: string;
+  title: string;
+  description?: string | null;
+  hazard_theme_id: string;
+  region: string;
+  status: RecordStatus;
+  data_url?: string | null;
+  data_format?: string | null;
+  review_note?: string | null;
+  owner_id: number;
+  owner_name: string;
+  created_at: string;
+  updated_at: string;
+  can_edit: boolean;
+  can_review: boolean;
+}
+
+export interface RecordPage {
+  items: DatasetRecord[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface RecordStats {
+  total: number;
+  published: number;
+  submitted: number;
+  draft: number;
+  rejected: number;
+}
+
+export interface SavedMapPayload {
+  hazard: string;
+  scenario: string;
+  layers: string[];
+  center: [number, number];
+  zoom: number;
+  aoi?: SavedAoiPayload | null;
+}
+
+export interface SavedAoiPayload {
+  source: "boundary" | "drawn";
+  level?: BoundaryLevel;
+  code?: string;
+  name: string;
+  geometry: GeoJSON.Geometry;
+}
+
+export interface SavedItem<P = SavedMapPayload | SavedAoiPayload> {
+  id: number;
+  kind: "map" | "aoi";
+  name: string;
+  payload: P;
+  created_at: string;
+}

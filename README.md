@@ -17,6 +17,14 @@ nginx/      Reverse proxy config for the hosted deployment
 docker-compose.yml   Local orchestration: postgis, backend (TiTiler embedded), frontend, nginx
 ```
 
+## Accounts, Data Portal and the redesigned UI
+
+The frontend follows the Visily mock-up (login, map workspace, data portal, account
+settings, layer library, reporting). The public map needs no account; signing in unlocks
+the Data Management Portal, saved map views and areas, and alerts. Set `SECRET_KEY` and
+`ADMIN_EMAILS` (reviewers) in the environment. Details, routes and endpoints are in
+**[`UI-REDESIGN.md`](./UI-REDESIGN.md)**.
+
 ## Admin boundaries (State / LGA / Ward) + area of interest
 
 Three boundary layers are bundled and served straight from disk (no DB/migration needed —

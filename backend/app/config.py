@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     api_v1_prefix: str = "/api/v1"
     env: str = "development"
+    # Signs sign-in tokens. Set this in production (any long random string);
+    # if unset, a key derived from DATABASE_URL is used.
+    secret_key: str | None = None
+    # Comma-separated emails that get the reviewer ("admin") role, which can
+    # publish or reject Data Portal submissions.
+    admin_emails: str = ""
+    app_version: str = "4.3.0"
 
     @property
     def titiler_internal(self) -> str:
