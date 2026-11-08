@@ -1,15 +1,22 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError, OperationalError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
+from app.database import engine
 from app.tiler import create_tiler_app
 from app import accounts
 from app.routers import hazards, layers, features, scenarios, search, analysis, health, boundaries, imagery
 
 settings = get_settings()
+log = logging.getLogger("atlas")
 
 app = FastAPI(
     title="Lagos State Climate Hazard Risk Atlas API",
@@ -52,10 +59,38 @@ def _create_account_tables() -> None:
     accounts.init_tables()
 
 
+@app.exception_handler(OperationalError)
+@app.exception_handler(DBAPIError)
+async def _database_unavailable(request: Request, exc: Exception):
+    """A database that can't be reached (paused Supabase project, wrong
+    DATABASE_URL, pooler outage) used to surface as a bare 500 on every
+    endpoint. Log the real cause and tell the browser what's going on."""
+    log.error("Database error on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "The atlas database isn't reachable right now. Please try again in a few minutes."},
+    )
+
+
 @app.get(f"{settings.api_v1_prefix}/status", tags=["health"])
 def system_status():
-    """Version + status shown in the app's footer bar."""
-    return {"status": "stable", "version": settings.app_version}
+    """Version + status shown in the app's footer bar, including whether the
+    database answers (so a paused/unreachable DB is visible at a glance)."""
+    db_ok = True
+    db_error = None
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:  # report, don't raise: this endpoint must answer
+        db_ok = False
+        db_error = type(exc).__name__
+        log.error("Status check: database unreachable: %s", exc)
+    return {
+        "status": "stable" if db_ok else "degraded",
+        "database": "ok" if db_ok else "unreachable",
+        "database_error": db_error,
+        "version": settings.app_version,
+    }
 
 # TiTiler runs inside this app (see app/tiler.py) — one deployment serves the
 # API, the raster tiles and the frontend. Like the API routers, this has to be

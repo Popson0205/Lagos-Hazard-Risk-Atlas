@@ -290,9 +290,16 @@ async function loadStatus(): Promise<void> {
   try {
     const res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? "/api/v1"}/status`);
     if (!res.ok) throw new Error();
-    const data = (await res.json()) as { status: string; version: string };
-    text.textContent = `System status: ${data.status}`;
+    const data = (await res.json()) as { status: string; version: string; database?: string };
     $("version-pill").textContent = `v${data.version} Stable`;
+    if (data.database === "unreachable") {
+      text.textContent = "System status: database unreachable";
+      dot.className = "dot warn";
+      chip.innerHTML = '<span class="dot warn"></span>Database offline';
+      $("support-status").innerHTML = '<span class="dot warn"></span>Database offline';
+      return;
+    }
+    text.textContent = `System status: ${data.status}`;
     dot.className = "dot";
     chip.innerHTML = '<span class="dot"></span>System live';
     $("support-status").innerHTML = '<span class="dot"></span>Operational';
